@@ -48,7 +48,7 @@ class BasicBlock(nn.Module):
         return (out)
 
 class pointcloudnet(nn.Module):
-    def __init__(self,block,layers):
+    def __init__(self,layers):
         super(pointcloudnet,self).__init__()
 
         # standard parameters initialization
@@ -56,6 +56,9 @@ class pointcloudnet(nn.Module):
         self.dialation = 1
         self.groups = 1
         self.base_wodth = 64
+
+        # Using Batch normalization: Define normalization layer
+        self.batch_normal_layer = nn.BatchNorm2d
 
         # Need to start with a conv layer
         self.layer0 = self.create_layers(BasicBlock,64,layers[0])
@@ -65,9 +68,6 @@ class pointcloudnet(nn.Module):
         self.layer4 = self.create_layers(BasicBlock,1024,layers[4]) 
         self.layer5 = self.create_layers(BasicBlock,2018,layers[5])
 
-        # Using Batch normalization: Define normalization layer
-        self.batch_normal_layer = nn.BatchNorm2d
-
         self.leakyReLU_layer = nn.LeakyReLU(inplace=True)
         self.avgpool = nn.AdaptiveAvgPool2d((1,1))
 
@@ -76,7 +76,7 @@ class pointcloudnet(nn.Module):
     '''
     def create_layers(self, block, planes, blocks, stride=1, downsample=None):
         
-        batch_normal_layer = self.batch_normal_layer
+        batchNormalLayer = self.batch_normal_layer
         dialtion = self.dialation
 
         # multiply dialation by stride
@@ -107,6 +107,15 @@ class pointcloudnet(nn.Module):
 
         return(x)
 
+class get_loss(torch.nn.Module):
+    def __init__(self):
+        super(get_loss,self).__init__()
+
+    def forward(self, inPutCld, targetCld):
+        '''
+        Euclidean distance as loss functions
+        Calculate Euclidean distance of each point and calculate the mean euclidean distance
+        '''
 
 
 

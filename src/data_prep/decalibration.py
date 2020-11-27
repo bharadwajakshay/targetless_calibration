@@ -124,6 +124,8 @@ def main():
 
     # Move into image fdirectory
     os.chdir(imagefiledir)
+
+    count = 0
     
     with tqdm.tqdm(total=len(glob.glob('*.png'))) as img_bar:
 
@@ -186,7 +188,10 @@ def main():
 
                     # Write the R|t to the file
                     transform_quat = np.vstack((T_rand,quat_rand))
-                    data[filename+'_'+str(idx)] = {'transform' : str(np.expand_dims(np.ndarray.flatten(transform_quat), 0)), 'point_filename' : transformed_pts_filename} 
+                    data[str(count)] = {'transform' : str(np.expand_dims(np.ndarray.flatten(transform_quat), 0)),
+                                                   'point_filename' : transformed_pts_filename,
+                                                   'target_filename' : pointcloudfilename }
+                    count += 1
                     rotation_bar.update(1)
             img_bar.update(1)
 
