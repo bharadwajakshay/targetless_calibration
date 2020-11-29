@@ -11,6 +11,7 @@ from data_prep.dataLoader import *
 import importlib
 from pathlib import Path
 from model import pointcloudnet
+import provider
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -33,8 +34,8 @@ def main():
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=batch_size, shuffle=False, num_workers=4)
     #MODEL = importlib.import_module(pointcloudnet)
 
-    network_model = pointcloudnet.pointcloudnet(layers=[2, 2, 2, 2, 2, 2])
-    loss_function = pointcloudnet.get_loss()
+    network_model = pointcloudnet.pointcloudnet(layers=[2, 2, 2, 2, 2, 2]).cuda()
+    loss_function = pointcloudnet.get_loss().cuda()
 
     optimizer = torch.optim.Adam(
         network_model.parameters(),
@@ -57,7 +58,27 @@ def main():
         scheduler.step()
 
         for batch_no, data in tqdm(enumerate(trainDataLoader,0), total=len(trainDataLoader), smoothing=0.9):
-            inputPtCld, transformVec, targetCld = data
+            inputPtTensor, transformTensor, targetTensor = data
+            # Extract point clouds
+            inputCld = inputPtTensor.data.numpy()
+            targetCld = targetTensor.data.numpy()
+
+            # Preprocessing the input cloud
+            #inputCldPtsDropped = provider.random_point_dropout(inputCld)
+            '''inputCldPtsDropped[:,:,0:3] = provider.random_scale_point_cloud(inputCldPtsDropped[:,:, 0:3])'''
+            # Convert it back to tensor
+            #inputPtsDroppedTensor = torch.Tensor(inputCldPtsDropped)
+
+            # Move the data to cuda
+            # inputPtsDroppedTensor = inputPtsDroppedTensor.cuda()
+            inputPtTensor = inputPtTensor.cuda()
+            transformTensor = transformTensor.cuda()
+
+            optimizer.zero_grad()
+
+            network_model = network_model.train()
+            feature_map = network_model(inputPtTensor)
+
             print(something)
             
 
