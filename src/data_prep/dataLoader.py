@@ -25,6 +25,17 @@ def readvelodynepointcloud(path_to_file):
     # Return points ignoring the reflectivity 
     return(pointcloud[:,:3], intensity_data)
 
+def readtransformedpointcloud(path_to_file):
+    '''
+    The velodyne data that is presented is in the form of a np array written as binary data.
+    So to read the file, we use the inbuilt fuction form the np array to rad from the file
+    '''
+
+    pointcloud = np.fromfile(path_to_file, dtype=np.float64).reshape(-1,3)
+    
+    # Return points ignoring the reflectivity 
+    return(pointcloud[:,:3])
+
 class dataLoader(Dataset):
 
     def __init__ (self, filename="/home/akshay/targetless_calibration/data/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/agumenteddata/angles_summary.json"):
@@ -42,8 +53,13 @@ class dataLoader(Dataset):
         # read the point cloud 
         ptCldFileName = self.data[key]["point_filename"]
         targetCldFileName = self.data[key]["target_filename"]
-        ptCld, intensity = readvelodynepointcloud(ptCldFileName)
+        ptCld = readtransformedpointcloud(ptCldFileName)
         targetCld, intensity = readvelodynepointcloud(targetCldFileName)
+
+        if(ptCld.shape[0] != targetCld.shape[0]):
+            print("The size of the input cloud and the target cloud is not the same")
+            print("Input Point Cloud Size = "+str(ptCld.shape[0])+"\tTransformed Point Cloud Size = "+str(targetCld.shape[0]))
+            raise
 
         transform = self.data[key]["transform"].strip("[[]]").split(" ")
         R_t = []
@@ -65,5 +81,5 @@ class dataLoader(Dataset):
 
 if __name__ == "__main__":
     obj = dataLoader()
-    x1, x2, x3 = obj.__getitem__('0')
+    x1, x2, x3 = obj.__getitem__('15')
     print("Tested")
