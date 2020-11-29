@@ -178,6 +178,13 @@ def main():
                     transformed_pts_filename = agumenteddatapath+filename+'_'+str(idx)+'.bin'
                     transformed_pts_imagename = agumenteddatapath+filename+'_'+str(idx)+'.png'
 
+                    '''
+                    Verification that the Original point cloud and transformed point cloud are of the same size
+                    '''
+                    if(pointcloud.shape[0]!= transformed_pts.shape[0]):
+                        print("Orignal Point Cloud Size = "+pointcloud.shape[0]+"\tTransformed Point Cloud Size = "+transformed_pts.shape[0])
+                        exit(-1)
+
                     transformed_pts.astype(transformed_pts.dtype).tofile(transformed_pts_filename)
 
                     pt_Cld_vis = np.matmul(transform,pointcloud_padded.T).T[:,:3]
