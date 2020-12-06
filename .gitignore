@@ -142,3 +142,12 @@ data/*
 
 # VScode Directory
 .vscode/*
+
+
+# numpy arrray
+*.npy
+
+# image files
+*.png
+*.jpg
+*.tiff
