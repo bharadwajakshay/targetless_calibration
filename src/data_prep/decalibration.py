@@ -105,6 +105,14 @@ def projpointcloud2imgplane(points, v_fov, h_fov, velcamR, velcamT, camProj, mod
     
     return ans, c_
 
+def getInvQuat(R,T):
+    invR = R.T
+    invT = np.matmul(-invR, T)
+    return([invR, invT]) 
+
+def getQuaternions(R):
+    Robj = rot.from_matrix(R)
+    return(Robj.as_quat())
 
 def main():
     '''
@@ -121,11 +129,13 @@ def main():
     agumenteddatapath = pointcloudfiledir+'agumenteddata/'
 
     data = {}
+    testData = {}
 
     # Move into image fdirectory
     os.chdir(imagefiledir)
 
     count = 0
+    testDataCnt = 0
     
     with tqdm.tqdm(total=len(glob.glob('*.png'))) as img_bar:
 
@@ -144,6 +154,8 @@ def main():
             # read vel - cam Roation and Translation matrix
             [R,T] = readveltocamcalibrationdata(camvelocalibfilename)
 
+            #convert RnT to 
+
             veltocam_Transform = np.vstack((np.hstack((R,T)),[0, 0, 0, 1.0]))
 
         
@@ -157,6 +169,15 @@ def main():
             [points,color] = projpointcloud2imgplane(pointcloud,(-24.9,2),(-45,45), R, T, P)
             ptsnimg = displayprojectedptsonimg(points,color,img)
             cv2.imwrite(agumenteddatapath+filename+'_original.png',ptsnimg)
+
+            testTransform = np.vstack((T,getQuaternions(R).reshape(4,1)))
+
+            testData[str(testDataCnt)] = {'transform' : str(np.expand_dims(np.ndarray.flatten(testTransform), 0)),
+                                          'point_filename' : pointcloudfilename ,
+                                          'image_filename' : imagefiledir+img_file,
+                                          'target_filename' : pointcloudfilename }
+
+            testDataCnt += 1
 
             with tqdm.tqdm(total=samplesize) as rotation_bar:
                 for idx in range(samplesize):
@@ -196,12 +217,16 @@ def main():
                     # Write the R|t to the file
                     transform_quat = np.vstack((T_rand,quat_rand))
                     data[str(count)] = {'transform' : str(np.expand_dims(np.ndarray.flatten(transform_quat), 0)),
+                                        'image_filename' : imagefiledir+img_file,
                                                    'point_filename' : transformed_pts_filename,
                                                    'target_filename' : pointcloudfilename }
                     count += 1
                     rotation_bar.update(1)
             img_bar.update(1)
 
+        jsonFilename = open(agumenteddatapath+'test_data.json','x')
+        json.dump(testData,jsonFilename)
+        jsonFilename.close()
         jsonFilename = open(agumenteddatapath+'angles_summary.json','x')
         json.dump(data,jsonFilename)
         jsonFilename.close()
