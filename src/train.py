@@ -10,9 +10,10 @@ import json
 from data_prep.dataLoader import *
 import importlib
 from pathlib import Path
-from model import pointcloudnet
 import provider
 from model import regressor
+os.environ["CUDA_VISIBLE_DEVICES"] = '0,1,2'
+from model import pointcloudnet
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -102,12 +103,12 @@ def test(model_pointnet, model_resnet, model_regressor, dataLoader):
         inputPtTensor, imgTensor, transformTensor, targetTensor = data
         
         inputPtTensor = targetTensor.transpose(2,1)
-        inputPtTensor = inputPtTensor.cuda()
+        inputPtTensor = inputPtTensor
 
         poinrFeatureMap = model_pointnet(inputPtTensor)
         imgTensor = imgTensor.transpose(3,1)
-        imgFeatureMap = model_resnet(imgTensor).unsqueeze(dim=2).cuda()
-        aggregatedTensor = torch.cat([poinrFeatureMap,imgFeatureMap],dim=2).transpose(2,1)
+        imgFeatureMap = model_resnet(imgTensor).unsqueeze(dim=2)
+        aggregatedTensor = torch.cat([poinrFeatureMap,imgFeatureMap.to('cuda:2')],dim=2).transpose(2,1)
         pred = model_regressor(aggregatedTensor)
         [eucledeanDist, predTransform, targetTransform] = calculateEucledianDist(pred, transformTensor, inputPtTensor, targetTensor)
         eucledian_dist.append(eucledeanDist)
@@ -128,17 +129,15 @@ def test(model_pointnet, model_resnet, model_regressor, dataLoader):
 def main():
 
     # Default parameters 
-    batch_size = 1
-    epochs = 25
+    batch_size = 5
+    epochs = 50
     learning_rate = 0.0001 # 10^-5
     decay_rate = 1e-4
     resnet = resnet18(pretrained=True)
 
     # Hyper Parameters 
-    os.environ["CUDA_VISIBLE_DEVICES"] = '0'
-
     TRAIN_DATASET = dataLoader()
-    TEST_DATASET = dataLoader('/home/akshay/targetless_calibration/data/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/agumenteddata/test_data.json')
+    TEST_DATASET = dataLoader('/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/targetless_calibration/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/agumenteddata/test_data.json')
 
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=batch_size, shuffle=False, num_workers=0)
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=1, shuffle=False, num_workers=0)
@@ -147,9 +146,9 @@ def main():
     # empty the CUDA memory
     torch.cuda.empty_cache()
 
-    network_model = pointcloudnet.pointcloudnet(layers=[1, 1, 1, 1, 1, 1]).cuda()
-    regressor_model = regressor.regressor().cuda()
-    loss_function = pointcloudnet.get_loss().cuda()
+    network_model = pointcloudnet.pointcloudnet(layers=[1, 1, 1, 1, 1, 1])
+    regressor_model = regressor.regressor().to('cuda:2')
+    loss_function = pointcloudnet.get_loss().to('cuda:1')
 
     
 
@@ -197,8 +196,8 @@ def main():
             # Move the data to cuda
             # inputPtsDroppedTensor = inputPtsDroppedTensor.cuda()
             inputPtTensor = inputPtTensor.transpose(2,1)
-            inputPtTensor = inputPtTensor.cuda()
-            transformTensor = transformTensor.cuda()
+            inputPtTensor = inputPtTensor
+            transformTensor = transformTensor
 
             optimizer.zero_grad()
 
@@ -206,10 +205,10 @@ def main():
             feature_map = network_model(inputPtTensor)
             imgTensor = imgTensor.transpose(3,1)
             img_featuremap = resnet(imgTensor)
-            img_featuremap = img_featuremap.unsqueeze(dim=2).cuda()
-            aggTensor = torch.cat([feature_map,img_featuremap],dim=2)
+            img_featuremap = img_featuremap.unsqueeze(dim=2)
+            aggTensor = torch.cat([feature_map,img_featuremap.to('cuda:2')],dim=2)
             pred = regressor_model(aggTensor.transpose(2,1))
-            loss = loss_function(pred, transformTensor, inputPtTensor, targetTensor)
+            loss = loss_function(pred.to('cuda:1'), transformTensor.to('cuda:1'), inputPtTensor, targetTensor)
             loss_function_vec = np.append(loss_function_vec,loss.cpu().data.numpy())
             loss.backward()
             optimizer.step()
