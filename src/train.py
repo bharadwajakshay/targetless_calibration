@@ -137,7 +137,7 @@ def main():
 
     # Hyper Parameters 
     TRAIN_DATASET = dataLoader()
-    TEST_DATASET = dataLoader('/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/targetless_calibration/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/agumenteddata/test_data.json')
+    TEST_DATASET = dataLoader('/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/targetless_calibration/data/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/agumenteddata/test_data.json')
 
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=batch_size, shuffle=False, num_workers=0)
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=1, shuffle=False, num_workers=0)
@@ -202,6 +202,7 @@ def main():
             optimizer.zero_grad()
 
             network_model = network_model.train()
+            resnet = resnet.eval()
             feature_map = network_model(inputPtTensor)
             imgTensor = imgTensor.transpose(3,1)
             img_featuremap = resnet(imgTensor)
