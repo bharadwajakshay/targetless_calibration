@@ -89,8 +89,8 @@ def generaterandomRT(sample_size):
     [pitch, roll, yaw] range between [-30, 30] 
     and t between [-1, 1]
     '''
-    R = np.random.randint(-15,15,size=(3,sample_size))
-    t =  np.random.normal(-1,1,[3,sample_size])
+    R = np.random.randint(-3,3,size=(3,sample_size))
+    t =  np.random.normal(-0.5,5,[3,sample_size])
     return[R,t]
     
 
