@@ -54,7 +54,7 @@ def preprocessInputImg(image):
 
 class dataLoader(Dataset):
 
-    def __init__ (self, filename="/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/targetless_calibration/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/agumenteddata/angles_summary.json"):
+    def __init__ (self, filename='/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/targetless_calibration/data/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/agumenteddata/angles_summary.json'):
         self.datafile = filename
         file_descriptor = open(self.datafile,'r')
         self.data = json.load(file_descriptor)
