@@ -196,13 +196,13 @@ class pointcloudnet(nn.Module):
         self.avgpool3 = nn.AdaptiveAvgPool1d(512)
         ''' 
         self.convB1 = nn.Conv1d(input_channel, 64, 1).to('cuda:1')
-        nn.init.xavier_uniform(self.convB1.weight)
+        nn.init.xavier_uniform_(self.convB1.weight)
         self.convB2 = nn.Conv1d(64, 128, 1).to('cuda:1')
-        nn.init.xavier_uniform(self.convB2.weight)
+        nn.init.xavier_uniform_(self.convB2.weight)
         self.convB3 = nn.Conv1d(128, 256, 1).to('cuda:1')
-        nn.init.xavier_uniform(self.convB3.weight)
+        nn.init.xavier_uniform_(self.convB3.weight)
         self.convB4 = nn.Conv1d(256, 512, 1).to('cuda:2')
-        nn.init.xavier_uniform(self.convB4.weight)
+        nn.init.xavier_uniform_(self.convB4.weight)
         self.convB5 = nn.Conv1d(512, 1024, 1)
         self.convB6 = nn.Conv1d(1024, 2048, 1)
 
