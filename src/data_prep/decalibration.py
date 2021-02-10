@@ -84,9 +84,9 @@ def readcamtocamcalibrationdata(path_to_file, mode='02'):
     return [P_, R_] 
 
 
-def projpointcloud2imgplane(points, v_fov, h_fov, velcamR, velcamT, camProj, mode='02'):
+def projpointcloud2imgplane(points, intensity, v_fov, h_fov, velcamR, velcamT, camProj, mode='02'):
 
-    xyz_v, c_ = velo_points_filter(points, v_fov, h_fov)
+    xyz_v, c_, i_ = velo_points_filter(points, intensity, v_fov, h_fov)
     
     RT_ = np.concatenate((velcamR, velcamT),axis = 1)
     
@@ -103,7 +103,7 @@ def projpointcloud2imgplane(points, v_fov, h_fov, velcamR, velcamT, camProj, mod
     xy_i = xyz_c[::]/xyz_c[::][2]
     ans = np.delete(xy_i, 2, axis=0)
     
-    return ans, c_
+    return ans, c_, i_
 
 def getInvQuat(R,T):
     invR = R.T
@@ -166,9 +166,11 @@ def main():
             samplesize = 30
             [R_euler,t_decalib] = generaterandomRT(samplesize)
 
-            [points,color] = projpointcloud2imgplane(pointcloud,(-24.9,2),(-45,45), R, T, P)
-            ptsnimg = displayprojectedptsonimg(points,color,img)
+            [points,color, intensity] = projpointcloud2imgplane(pointcloud, intensity_val, (-24.9,2),(-45,45), R, T, P)
+            ptsnimg, depthimg, intensityimg = displayprojectedptsonimg(points, color, intensity, img)
             cv2.imwrite(agumenteddatapath+filename+'_original.png',ptsnimg)
+            cv2.imwrite(agumenteddatapath+filename+'_depthImg.png',depthimg)
+            cv2.imwrite(agumenteddatapath+filename+'_intensity.png',intensityimg)
 
             testTransform = np.vstack((T,getQuaternions(R).reshape(4,1)))
 

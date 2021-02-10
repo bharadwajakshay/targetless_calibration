@@ -1,6 +1,8 @@
 import numpy as np
 import cv2
 import random
+from matplotlib import pyplot as plt
+
 
 
 def getdepthcolor(val, min_d=0, max_d=120):
@@ -40,7 +42,7 @@ def in_range_points(points, size):
     # extract in-range points ""
     return np.logical_and(points > 0, points < size)    
 
-def velo_points_filter(points, v_fov, h_fov):
+def velo_points_filter(points, intensity, v_fov, h_fov):
     # extract points corresponding to FOV setting
     
     # Projecting to 2D
@@ -57,6 +59,7 @@ def velo_points_filter(points, v_fov, h_fov):
     x_lim = fov_setting(x, x, y, z, dist, h_fov, v_fov)[:,None]
     y_lim = fov_setting(y, x, y, z, dist, h_fov, v_fov)[:,None]
     z_lim = fov_setting(z, x, y, z, dist, h_fov, v_fov)[:,None]
+    i_lim = fov_setting(intensity, x, y, z, dist, h_fov, v_fov)[:,None]
 
     # Stack arrays in sequence horizontally
     xyz_ = np.hstack((x_lim, y_lim, z_lim))
@@ -70,18 +73,39 @@ def velo_points_filter(points, v_fov, h_fov):
     dist_lim = fov_setting(dist, x, y, z, dist, h_fov, v_fov)
     color = getdepthcolor(dist_lim, 0, 70)
     
-    return xyz_, color
+    return xyz_, color, i_lim
 
 
-def displayprojectedptsonimg(points, color, image):
+def displayprojectedptsonimg(points, color, intensity, image):
     """ project converted velodyne points into camera image """
-    
+
+    depthImgs = np.ones(image.shape,np.uint8)*255
+    intensityImg = np.zeros(image.shape,np.uint8)*255
+
+    """
+    histogram = cv2.calcHist([intensity],[0], None, [1], [0,1])
+    plt.plot(histogram)
+    plt.savefig('histogram.jpg')
+    """    
     hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    depthImgs = cv2.cvtColor(depthImgs, cv2.COLOR_BGR2HSV)
+    intensityImg = cv2.cvtColor(intensityImg, cv2.COLOR_BGR2HSV)
 
     for i in range(points.shape[1]):
-        cv2.circle(hsv_image, (np.int32(points[0][i]),np.int32(points[1][i])),1, (int(color[i]),255,255),-1)
+        
+        u = np.int32(points[0][i])
+        v = np.int32(points[1][i])
+               
+#        cv2.circle(hsv_image, (u,v),1, (int(color[i]),255,255),-1)
+#        cv2.circle(depthImgs, (np.int32(points[0][i]),np.int32(points[1][i])),1, (int(color[i]),255,255),-1)
 
-    return cv2.cvtColor(hsv_image, cv2.COLOR_HSV2RGB)
+        if (u<image.shape[1] and v<image.shape[0]):
+            hsv_image[v][u] = (int(color[i]),255,255)
+            depthImgs[v][u] = (int(color[i]),255,255)
+            intensityImg[v][u] = (int(intensity[i]*255),255,255)
+
+
+    return cv2.cvtColor(hsv_image, cv2.COLOR_HSV2RGB), cv2.cvtColor(depthImgs, cv2.COLOR_HSV2RGB), cv2.cvtColor(intensityImg, cv2.COLOR_HSV2RGB)
 
 def generaterandomRT(sample_size):
     '''
