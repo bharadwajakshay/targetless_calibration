@@ -141,7 +141,7 @@ cython_debug/
 data/*
 
 # VScode Directory
-.vscode/*
+#.vscode/*
 
 
 # numpy arrray

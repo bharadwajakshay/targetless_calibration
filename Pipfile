@@ -12,6 +12,7 @@ torch = "*"
 provider = "*"
 imageio = "*"
 matplotlib = "*"
+tfrecord = "*"
 
 [dev-packages]
 
