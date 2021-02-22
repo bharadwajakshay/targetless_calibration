@@ -2,122 +2,97 @@ import numpy as np
 import cv2
 import random
 from matplotlib import pyplot as plt
+from scipy.spatial.transform import Rotation as rot
+import tqdm
+import json
+import glob
+import os
+from data_prep.filereaders import *
+from data_prep.transforms import *
 
 
 
-def getdepthcolor(val, min_d=0, max_d=120):
-    '''
-    print Color(HSV's H value) corresponding to distance(m) 
-    close distance = red , far distance = blue
-    '''
-    np.clip(val, 0, max_d, out=val) # max distance is 120m but usually not usual
-    return (((val - min_d) / (max_d - min_d)) * 120).astype(np.uint8) 
+def findtheCalibparameters(rootDir):
+    veloCamCalib = "calib_velo_to_cam.txt"
+    camCamCalib = "calib_cam_to_cam.txt"
+    P_camCam, R_camCam = readcamtocamcalibrationdata(os.path.join(rootDir,camCamCalib))
+    R_veloCam, T_veloCam = readveltocamcalibrationdata(os.path.join(rootDir,veloCamCalib))
 
-def getinrangeptsH(points, m, n, fov):
-    # extract horizontal in-range points
-    return np.logical_and(np.arctan2(n,m) > (-fov[1] * np.pi / 180), \
-                          np.arctan2(n,m) < (-fov[0] * np.pi / 180))
+    return(P_camCam, R_camCam, R_veloCam, T_veloCam)
 
-def getinrangeptsV(points, m, n, fov):
-    # extract vertical in-range points
-    return np.logical_and(np.arctan2(n,m) < (fov[1] * np.pi / 180), \
-                          np.arctan2(n,m) > (fov[0] * np.pi / 180))
+def processRunDir(runDir, procDataDir, P_rect, R_rect, R, T):
+    # Get the images name 
+    img_02 = 'image_02'
+    veloPts = 'velodyne_points'
+    data = 'data'
+    imgsDir = os.path.join(runDir,img_02,data)
+    veloDir = os.path.join(runDir,veloPts,data)
 
-def fov_setting(points, x, y, z, dist, h_fov, v_fov):
-    # filter points based on h,v FOV  
+    dir = runDir.split('/')[(len(runDir.split('/')) - 2):]
+    procDataDir = os.path.join(procDataDir,dir[0],dir[1])
+    procDataDirDepth = os.path.join(procDataDir,"depthImg")
+    procDataDirIntensity = os.path.join(procDataDir,"intensityImg")
+
+    # Check if the folders are present, if not create the folders
+    if not os.path.exists(procDataDirDepth):
+        os.makedirs(procDataDirDepth)
     
-    if h_fov[1] == 180 and h_fov[0] == -180 and v_fov[1] == 2.0 and v_fov[0] == -24.9:
-        return points
-    
-    if h_fov[1] == 180 and h_fov[0] == -180:
-        return points[getinrangeptsV(points, dist, z, v_fov)]
-    elif v_fov[1] == 2.0 and v_fov[0] == -24.9:        
-        return points[getinrangeptsH(points, x, y, h_fov)]
-    else:
-        h_points = getinrangeptsH(points, x, y, h_fov)
-        v_points = getinrangeptsV(points, dist, z, v_fov)
-        return points[np.logical_and(h_points, v_points)]
-
-def in_range_points(points, size):
-    # extract in-range points ""
-    return np.logical_and(points > 0, points < size)    
-
-def velo_points_filter(points, intensity, v_fov, h_fov):
-    # extract points corresponding to FOV setting
-    
-    # Projecting to 2D
-    x = points[:, 0]
-    y = points[:, 1]
-    z = points[:, 2]
-    dist = np.sqrt(x ** 2 + y ** 2 + z ** 2)
-
-    if h_fov[0] < -90:
-        h_fov = (-90,) + h_fov[1:]
-    if h_fov[1] > 90:
-        h_fov = h_fov[:1] + (90,)
-    
-    x_lim = fov_setting(x, x, y, z, dist, h_fov, v_fov)[:,None]
-    y_lim = fov_setting(y, x, y, z, dist, h_fov, v_fov)[:,None]
-    z_lim = fov_setting(z, x, y, z, dist, h_fov, v_fov)[:,None]
-    i_lim = fov_setting(intensity, x, y, z, dist, h_fov, v_fov)[:,None]
-
-    # Stack arrays in sequence horizontally
-    xyz_ = np.hstack((x_lim, y_lim, z_lim))
-    xyz_ = xyz_.T
-
-    # stack (1,n) arrays filled with the number 1
-    one_mat = np.full((1, xyz_.shape[1]), 1)
-    xyz_ = np.concatenate((xyz_, one_mat),axis = 0)
-
-    # need dist info for points color
-    dist_lim = fov_setting(dist, x, y, z, dist, h_fov, v_fov)
-    color = getdepthcolor(dist_lim, 0, 70)
-    
-    return xyz_, color, i_lim
+    if not os.path.exists(procDataDirIntensity):
+        os.makedirs(procDataDirIntensity)
 
 
-def displayprojectedptsonimg(points, color, intensity, image):
-    """ project converted velodyne points into camera image """
-
-    depthImgs = np.ones(image.shape,np.uint8)*255
-    intensityImg = np.zeros(image.shape,np.uint8)*255
+    recordkeeper = []
+    maxSizePtCld = 0
 
     """
-    histogram = cv2.calcHist([intensity],[0], None, [1], [0,1])
-    plt.plot(histogram)
-    plt.savefig('histogram.jpg')
-    """    
-    hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    depthImgs = cv2.cvtColor(depthImgs, cv2.COLOR_BGR2HSV)
-    intensityImg = cv2.cvtColor(intensityImg, cv2.COLOR_BGR2HSV)
+    for every image file in imgs Dir, Find the corresponding points
+    1. Get the filename of the point 
+    2. Get the corresponding filename of the image
+    3. Read the point cloud
+    4. generate random transforms 
+    5. Caluclate depth map  
+    """
 
-    for i in range(points.shape[1]):
-        
-        u = np.int32(points[0][i])
-        v = np.int32(points[1][i])
-               
-#        cv2.circle(hsv_image, (u,v),1, (int(color[i]),255,255),-1)
-#        cv2.circle(depthImgs, (np.int32(points[0][i]),np.int32(points[1][i])),1, (int(color[i]),255,255),-1)
+    with tqdm.tqdm(total=len(glob.glob(veloDir+'/*.bin'))) as processBar:
 
-        if (u<image.shape[1] and v<image.shape[0]):
-            hsv_image[v][u] = (int(color[i]),255,255)
-            depthImgs[v][u] = (int(color[i]),255,255)
-            intensityImg[v][u] = (int(intensity[i]*255),255,255)
+        for points in glob.glob(veloDir+'/*.bin'):
+            imgFileId = points.split('/')[len(points.split('/'))-1].split('.')[0]
+            imgFileName = os.path.join(imgsDir,imgFileId+'.png')
 
+            # Read the point cloud  
+            ptcloud,intensityData = readvelodynepointcloud(points)
+            sizePtCld = ptcloud.shape[0]
 
-    return cv2.cvtColor(hsv_image, cv2.COLOR_HSV2RGB), cv2.cvtColor(depthImgs, cv2.COLOR_HSV2RGB), cv2.cvtColor(intensityImg, cv2.COLOR_HSV2RGB)
+            # Project points over imageplane
+            imgPts, rectPtCld, tfRand = projectptstoimgplane(ptcloud, intensityData, P_rect, R_rect, R, T, True)
 
-def generaterandomRT(sample_size):
-    '''
-    generate random rotation and translation 
-    [pitch, roll, yaw] range between [-30, 30] 
-    and t between [-1, 1]
-    '''
-    R = np.random.randint(-3,3,size=(3,sample_size))
-    t =  np.random.normal(-0.5,5,[3,sample_size])
-    return[R,t]
+            # Filter the points
+            [imgW, imgH, img] = readimgfromfile(imgFileName)
+            filteredPts2D, filteredPts3D = filterPts(imgPts,rectPtCld, imgW, imgH)
+            depthImage = generateDepthImage(filteredPts2D, filteredPts3D, imgW, imgH, img)
+            intensityImage = generateIntensityImage(filteredPts2D, filteredPts3D, imgW, imgH,img)
+
+            depthImageFileName = os.path.join(procDataDirDepth,imgFileId+'.png')
+            intensityImageFileName = os.path.join(procDataDirIntensity,imgFileId+'.png')
+
+            # Save Images
+            cv2.imwrite(depthImageFileName,depthImage)
+            cv2.imwrite(intensityImageFileName,intensityImage)
+
+            if sizePtCld > maxSizePtCld:
+                maxSizePtCld = sizePtCld
+
+            rundetails={
+                'colorImgFileName': imgFileName,
+                'pointCldFileName': points,
+                'depthImgFileName': depthImageFileName,
+                'intensityImgFileName': intensityImageFileName,
+                'transform2Estimate': tfRand.flatten().tolist()            
+            }
+
+            recordkeeper.append(rundetails)
+            processBar.update(1)
     
-
-
+    return(recordkeeper, maxSizePtCld)
 
 

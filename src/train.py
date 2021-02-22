@@ -14,81 +14,13 @@ import provider
 from model import regressor
 os.environ["CUDA_VISIBLE_DEVICES"] = '0,1,2'
 from model import pointcloudnet
+import concurrent.futures
+from common.utilities import *
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 sys.path.append(os.path.join(ROOT_DIR, 'model'))
-
-def getTranslationRot(prediction):
-    xyz = xyz = prediction[0:3,:]
-    rot = prediction[3:,:].flatten()
-    return(xyz, rot)
-
-def getRotMatFromQuat(quat):
-    rObj = rot.from_quat(quat)
-    return(rObj.as_matrix())
-
-def getInvTransformMat(R,T):
-    # https://math.stackexchange.com/questions/152462/inverse-of-transformation-matrix
-    invR = R.transpose()
-    invT = np.matmul(-invR,T)
-    R_T = np.vstack((np.hstack((invR,invT)),[0, 0, 0, 1.]))
-    return(R_T)
-
-def extractEulerAngles(R):
-    rObj = rot.from_matrix(R)
-    euler = rObj.as_euler(seq='zyx', degrees=True).reshape(3,1)
-    return(euler[0],euler[1],euler[2])
-
-
-def extractRotnTranslation(transformation):
-    R = transformation[0:3,0:3]
-    T = transformation[0:3,3]
-    return(extractEulerAngles(R))
-
-
-def calculateEucledianDist(pred,target,inputTensor, targetTensor):
-    pred = pred.squeeze(dim=0).cpu()
-    target = target.squeeze(dim=0).cpu()
-    inPutCldTensor = inputTensor.transpose(2,1).cpu()
-    targetCldTensor = targetTensor.cpu()
-
-    pred = pred.data.numpy()
-    target = target.data.numpy()
-    inPutCld = inPutCldTensor.data.numpy()
-    targetCld = targetCldTensor.data.numpy()
-
-    '''
-    Im estimating the decalibration applied.
-    So th etransofrmation is inverse of the decalibration
-    = decalibration ^-1 
-    '''
-
-    [predT, predQuat] = getTranslationRot(pred)
-    R = getRotMatFromQuat(predQuat)
-    invRt = getInvTransformMat(R, predT)
-
-    ones = np.ones(inPutCld.shape[1]).reshape(inPutCld.shape[1],1)
-    paddedinPutCld = np.hstack((inPutCld[0,:,:], ones))
-    transformedptCld = np.matmul(invRt, paddedinPutCld.T).T[:,:3]
-
-
-    [targetT, targetQuat] = getTranslationRot(target)
-    targetR = getRotMatFromQuat(targetQuat)
-    targetRT = np.vstack((np.hstack((targetR,targetT)),[0, 0, 0, 1.]))
-
-    ones = np.ones(targetCld.shape[1]).reshape(targetCld.shape[1],1)
-    paddedTargetCld = np.hstack((targetCld[0,:,:], ones))
-    transformedTargetCld = np.matmul(targetRT, paddedTargetCld.T).T[:,:3]
-
-    # calculate the eucledean distance between the the transformed and target point cloud
-    eucledeanDist = np.linalg.norm(transformedTargetCld[:] - transformedptCld[:],axis=1)
-  
-    return(np.average(eucledeanDist), invRt, targetRT)
-
-
-
 
 def test(model_pointnet, model_resnet, model_regressor, dataLoader):
     eucledian_dist = []
@@ -124,20 +56,22 @@ def test(model_pointnet, model_resnet, model_regressor, dataLoader):
     return(np.mean(eucledian_dist),np.mean(predr),np.mean(predp),np.mean(predy),np.mean(targetr),np.mean(targetp),np.mean(targety))
 
 
-
-
 def main():
 
     # Default parameters 
-    batch_size = 5
+    batch_size = 10
     epochs = 50
     learning_rate = 0.0001 # 10^-5
     decay_rate = 1e-4
-    resnet = resnet18(pretrained=True)
+
+    # Choose the RESNet network used to get features from the images 
+    resnetClrImg = resnet50(pretrained=True)
+    resnetDepthImg = resnet50(pretrained=True)
+    resnetIntensityImg = resnet50(pretrained=True)
 
     # Hyper Parameters 
-    TRAIN_DATASET = dataLoader()
-    TEST_DATASET = dataLoader('/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/targetless_calibration/data/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/agumenteddata/test_data.json')
+    TRAIN_DATASET = dataLoader('/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/processed/train/trainingdata.json')
+    TEST_DATASET = dataLoader('/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/processed/test/testingdata.json')
 
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=batch_size, shuffle=False, num_workers=0)
     testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=1, shuffle=False, num_workers=0)
@@ -146,14 +80,13 @@ def main():
     # empty the CUDA memory
     torch.cuda.empty_cache()
 
-    network_model = pointcloudnet.pointcloudnet(layers=[1, 1, 1, 1, 1, 1])
-    regressor_model = regressor.regressor().to('cuda:2')
-    loss_function = pointcloudnet.get_loss().to('cuda:1')
+    regressor_model = regressor.regressor()
+    loss_function = pointcloudnet.get_loss()
 
     
 
     optimizer = torch.optim.Adam(
-        network_model.parameters(),
+        regressor_model.parameters(),
         lr = learning_rate,
         betas = (0.9, 0.999),
         eps = 1e-08,
@@ -182,35 +115,35 @@ def main():
         scheduler.step()
 
         for batch_no, data in tqdm(enumerate(trainDataLoader,0), total=len(trainDataLoader), smoothing=0.9):
-            inputPtTensor, imgTensor, transformTensor, targetTensor = data
-            # Extract point clouds
-            inputCld = inputPtTensor.data.numpy()
-            targetCld = targetTensor.data.numpy()
-
-            # Preprocessing the input cloud
-            #inputCldPtsDropped = provider.random_point_dropout(inputCld)
-            '''inputCldPtsDropped[:,:,0:3] = provider.random_scale_point_cloud(inputCldPtsDropped[:,:, 0:3])'''
-            # Convert it back to tensor
-            #inputPtsDroppedTensor = torch.Tensor(inputCldPtsDropped)
-
-            # Move the data to cuda
-            # inputPtsDroppedTensor = inputPtsDroppedTensor.cuda()
-            inputPtTensor = inputPtTensor.transpose(2,1)
-            inputPtTensor = inputPtTensor
-            transformTensor = transformTensor
-
+            
+            # Expand the data into its respective components
+            ptCldTensor, clrImgTensor, depthImgTensor, intensityImgTensor, transformTensor = data
+            
             optimizer.zero_grad()
+            resnetClrImg = resnetClrImg.eval()
+            resnetDepthImg = resnetDepthImg.eval()
+            resnetIntensityImg = resnetIntensityImg.eval()
 
-            network_model = network_model.train()
-            resnet = resnet.eval()
-            feature_map = network_model(inputPtTensor)
-            imgTensor = imgTensor.transpose(3,1)
-            img_featuremap = resnet(imgTensor)
-            img_featuremap = img_featuremap.unsqueeze(dim=2)
-            aggTensor = torch.cat([feature_map,img_featuremap.to('cuda:2')],dim=2)
-            pred = regressor_model(aggTensor.transpose(2,1))
-            loss = loss_function(pred.to('cuda:1'), transformTensor.to('cuda:1'), inputPtTensor, targetTensor)
-            loss_function_vec = np.append(loss_function_vec,loss.cpu().data.numpy())
+            # Transpose the tensors such that the no of channels are the 2nd term
+            clrImgTensor = clrImgTensor.transpose(3,1)
+            depthImgTensor = depthImgTensor.transpose(3,1)
+            intensityImgTensor = intensityImgTensor.transpose(3,1)
+
+            featureMapClrImg = resnetClrImg(clrImgTensor)
+            featureMapDepthImg = resnetDepthImg(depthImgTensor)
+            featureMapIntensityImg = resnetIntensityImg(intensityImgTensor)
+
+            aggClrDepthFeatureMap = torch.cat([featureMapDepthImg,featureMapClrImg],dim=1)
+            aggClrIntensityFeatureMap = torch.cat([featureMapIntensityImg,featureMapClrImg],dim=1)
+
+            aggClrDepthFeatureMap = aggClrDepthFeatureMap.unsqueeze(dim=2)
+            [predDepthT, predDepthR]  = regressor_model(aggClrDepthFeatureMap.transpose(2,1))
+
+            aggClrIntensityFeatureMap = aggClrIntensityFeatureMap.unsqueeze(dim=2)
+            [predIntensityT, predIntensityR]  = regressor_model(aggClrIntensityFeatureMap.transpose(2,1))
+
+            loss = loss_function([predDepthT, predDepthT], [predIntensityT, predIntensityR], ptCldTensor, transformTensor)
+      
             loss.backward()
             optimizer.step()
             global_step += 1

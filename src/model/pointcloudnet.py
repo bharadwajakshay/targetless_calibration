@@ -3,6 +3,12 @@ import torch.nn as nn
 from scipy.spatial.transform import Rotation as rot
 import numpy as np
 
+from data_prep.filereaders import *
+from data_prep.helperfunctions import *
+from data_prep.transforms import *
+from common.tensorTools import *
+from common.pytorch3D import *
+
 
 def conv(in_channels, out_channels, kernel_size=3, stride_len = 1, dilation = 1):
     return nn.Conv1d(in_channels, out_channels, kernel_size = kernel_size, 
@@ -270,71 +276,135 @@ class get_loss(torch.nn.Module):
         self.criterion = nn.MSELoss()
         #self.criterion = nn.KLDivLoss()
 
-    def forward(self, prediction, target, inPutCldTensor, targetCldTensor):
-        '''
-        Euclidean distance as loss functions
-        Calculate Euclidean distance of each point and calculate the mean euclidean distance
+    def forward(self, predDepth, predIntensity, ptCloud, targetTransform):
 
-        Assuming prediction is a 7x1 vector 
-        '''
-        '''
-        Calculate Euler distace between point clouds
-        '''
-        '''
-        # copy variables from CUDA to cpu
-        prediction = prediction.squeeze(dim=0).cpu()
-        inPutCldTensor = inPutCldTensor.transpose(2,1).cpu()
-        targetCldTensor = targetCldTensor.cpu()
+        # Read the calibration parameters
+        calibFileRootDir = "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/train/2011_09_26"
+        [P_rect, R_rect, R, T] = findtheCalibparameters(calibFileRootDir)
 
-        prediction = prediction.data.numpy()
-        inPutCld = inPutCldTensor.data.numpy()
-        targetCld = targetCldTensor.data.numpy()
+        # Convert the NumPy array to Tensor
+        P_rect = torch.from_numpy(P_rect)
+        R_rect = torch.from_numpy(R_rect)
+        RT = createRTMat(R,T)
+        RT = torch.from_numpy(RT)
+
+        # Correct the point cloud 
+        # Detach the intensities and attach the unit coloumn 
+        intensity = ptCloud[:,:,3]
+        ptCloud = ptCloud[:,:,:3]
+        ones = torch.ones((ptCloud.shape[0],ptCloud.shape[1],1))
+        ptCloud = torch.cat([ptCloud,ones],dim=2)
+        ptCloud = torch.transpose(ptCloud, 2,1)
         
-        meanEucledeanDist =[]
+        # Corecting for RT
+        ptCloud = torch.matmul(RT,ptCloud[:])
 
-        for idx in range(0,prediction.shape[0]):
-            xyz = prediction[idx,0:3,:]
-            quat = prediction[idx,3:,:].flatten()
+        # Correcting for rotation cam R00  
+        ptCloud = torch.matmul(R_rect, ptCloud)
 
-            rObj = rot.from_quat(quat)
-            R = rObj.as_matrix()
+        # Use this Point cloud as the target point cloud to be achieved after multiplying the point cloud by
+        # predicted transforms
+        ptCloudTarget = ptCloud
 
-            # Since we need to caluclate the inverese of teh transformation 
-            # The transformation can be found here 
-            # https://math.stackexchange.com/questions/152462/inverse-of-transformation-matrix
+        # Create the transformation function 
+        predDepthTransform = createRTMatTensor(predDepth)
+        predIntensityTransform = createRTMatTensor(predIntensity)
+
+        """
+
+        # Test to check if the implementation of the rotationmatrix is correct
+        predDepthTransformRef = euler_angles_to_matrix(predDepth[1],"ZXY")
+        predIntensityTransformRef = euler_angles_to_matrix(predIntensity[1],"ZXY")
+
+        if torch.eq(predDepthTransformRef,predDepthTransform[:,:3,:3]):
+            print("The calculated Rotation matrix for the depth prediction is correct")
+        else:
+            print("The calculated Rotation matrix for the depth prediction is incorrect")
+
+        if torch.eq(predIntensityTransform[:,:3,:3],predIntensityTransformRef):
+            print("The calculated Rotation matrix for the intensity prediction is correct")
+        else:
+            print("The calculated Rotation matrix for the intensity prediction is incorrect")
+
+        """
+
+
+        # Inverse of the target transform
+        invTargetRT = calculateInvRTTensor(targetTransform)
+
+        # Extract the translation from target transform
+        targetT = targetTransform[:,:3,3]
+
+        # Calculate the distance between the target and the predicted
+        euclideanDistanceIntensity = torch.dist(predIntensity[0], targetT, p=2)
+        euclideanDistanceDepth = torch.dist(predDepth[0], targetT, p=2)
+
+        # Calculate the angular distance between the target and predicted
+        targetR = matrix_to_euler_angles(targetTransform[:,:3,:3],"ZXY")
+        euclideanAngularDistanceDepth = torch.dist(torch.rad2deg(predDepth[1]), torch.rad2deg(targetR) , p=2)
+        euclideanAngularDistanceIntensity = torch.dist(torch.rad2deg(predIntensity[1]), torch.rad2deg(targetR) , p=2)
+
+        # One component of the loss function 
+        # Eucliedian depth loss
+        lossEDD = (0.7*euclideanAngularDistanceDepth) + (0.3*euclideanDistanceDepth)
+        # Eucliedian Intensity loss
+        lossEDI = (0.7*euclideanAngularDistanceIntensity) + (0.3*euclideanDistanceIntensity)
+
+        lossEuclideanDistanceBtwTransform = lossEDD + lossEDI
+
+        # Create cross correlation
+        # Setp 0: Project the points that are rectified by inv of target transform
+        # Step 1: Multiply the point clouds by the predicted value
+        # Step 2: Caluclate the image tensor for target and predicted point cloud
+        # Step 3: Caluclate the cross correlation of the target image and the predicted image
+        # Step 4: Caluclate the maximum likelyhood summation value for a predefined radius of correlated value
+
+        # Step 0
+        # extract only the XYZ from the point cloud 
+        ptCloud = torch.transpose(ptCloud,2,1)[:,:,:3]
+        ptCloud = torch.cat([ptCloud,ones],dim=2)
+        ptCloud = torch.transpose(ptCloud, 2,1)
+
+        # Use this point cloud as the base for all the future caluclations 
+        ptCloudBase = torch.matmul(invTargetRT, ptCloud)
+
+        ptCloudBase = torch.transpose(ptCloudBase,2,1)[:,:,:3]
+        ptCloudBase = torch.cat([ptCloudBase,ones],dim=2)
+        ptCloudBase = torch.transpose(ptCloudBase, 2,1)
+
+        # Step 1
+        # Multiply the base point cloud with the predicted transponse 
+        finalDepthPredPtCld = torch.matmul(predDepthTransform, ptCloudBase.type(torch.float))
+        finalIntensityPredCld = torch.matmul(predIntensityTransform, ptCloudBase.type(torch.float))
+
+        # Step 2
+        # Get the image tensor by projecting the point cloud back to image plane
+        # These points are in the image coordinate frame
+        finalDepthPredPtCldImgCord = getImageTensorFrmPtCloud(P_rect.type(torch.float), finalDepthPredPtCld)
+        finalIntensityPredCldImgCord = getImageTensorFrmPtCloud(P_rect.type(torch.float), finalIntensityPredCld)
+
+        # Transpose the vectors to create a mask
+        finalDepthPredPtCldImgCord = torch.transpose(finalDepthPredPtCldImgCord,2,1)
+        finalIntensityPredCldImgCord = torch.transpose(finalIntensityPredCldImgCord,2,1)
+
+        # Now filter the points that are not in front of the camera 
+        imgHeight = 375
+        imgWidth = 1242
+
+        finalDepthPredPtCld = torch.transpose(finalDepthPredPtCld,2,1)
+
+        # Replace the 4th coloum of pt by intensities
+        finalDepthPredPtCld = torch.cat((finalDepthPredPtCld[:,:,:3], torch.unsqueeze(intensity,dim=2)),dim=2)
+        finalIntensityPredCld = torch.cat((torch.transpose(finalIntensityPredCld,2,1)[:,:,:3], torch.unsqueeze(intensity,dim=2)),dim=2)
+            
+        finalDepthImgCoord, finalDepthPredPtCld = filterPtClds(finalDepthPredPtCldImgCord, finalDepthPredPtCld, imgHeight, imgWidth)
+        finalIntImgCoord, finalIntensityPredCld = filterPtClds(finalIntensityPredCldImgCord, finalIntensityPredCld, imgHeight, imgWidth)
         
-            invR = R.transpose()
-            invT = np.matmul(-invR,xyz)
-
-            R_T = np.vstack((np.hstack((invR,invT)),[0, 0, 0, 1.]))
-
-            # pad the pointcloud
-            ones = np.ones(inPutCld.shape[1]).reshape(inPutCld.shape[1],1)
-            paddedinPutCld = np.hstack((inPutCld[idx,:,:], ones))
-            transformedPtCld = np.matmul(R_T, paddedinPutCld.T)
-            transformedPtCld = transformedPtCld.T[:,:3]
-            targetCloudIdx = targetCld[idx,:,:]
-
-            # calculate the eucledean distance between the the transformed and target point cloud
-            eucledeanDist = np.linalg.norm(transformedPtCld[:] - targetCloudIdx[:],axis=1)
-            meanEucledeanDist.append(np.average(eucledeanDist))
-        '''
-        target = target.float()
-        #loss = self.criterion(input=prediction, target=target)
-
-        pi = torch.acos(torch.zeros(1)).item() * 2
-
-        predictedRotMatrix = quaternion_to_matrix(prediction[:,3:,:].squeeze())
-        predictedEulerAngles = matrix_to_euler_angles(predictedRotMatrix, convention='ZYX')*(180/pi)
-
-        targetRotMatrix = quaternion_to_matrix(target[:,3:,:].squeeze())
-        targetEulerAngles = matrix_to_euler_angles(targetRotMatrix, convention='ZYX')
+        # create Depth Image tensor
+        depthTensor = createImage(finalDepthImgCoord,finalDepthPredPtCld[:,:,2], imgWidth, imgHeight)
+        IntensityTensor = createImage(finalIntImgCoord,finalIntensityPredCld[:,:,3], imgWidth, imgHeight)
 
 
-        loss_translation = 0.2*(torch.mean(target[:,:3,:].squeeze() - prediction[:,:3,:].squeeze())) 
-        loss_rotation = 0.8*(torch.mean(targetEulerAngles - predictedEulerAngles))
-        loss = torch.abs(loss_translation + loss_rotation)
-
-        return(loss)
+        return(lossEuclideanDistanceBtwTransform)
 
 
