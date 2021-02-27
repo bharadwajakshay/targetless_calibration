@@ -1,14 +1,14 @@
 import torch
 from common.pytorch3D import *
-
+import numpy as np
 
 def invTransformation():
     return(invRT)
 
-def createRTMatTensor(inputTensor):
+def createRTMatTensor(R, T):
     # The input Tensor is composed of two components R, T
-    T = inputTensor[0]
-    R = inputTensor[1]
+    # T = inputTensor[0]
+    # R = inputTensor[1]
     """
     # Consider R[0] = Alpha
     #          R[1] = Beta
@@ -68,7 +68,8 @@ def createRTMatTensor(inputTensor):
     zeros[:,:,3] = ones[:] 
 
 
-    RT = torch.cat((RT,zeros),dim=1)
+    # Move the vector zeros to device in which RT is present
+    RT = torch.cat((RT,zeros.to('cuda:'+str(RT.get_device()))),dim=1)
 
     return(RT)
 
@@ -91,13 +92,13 @@ def calculateInvRTTensor(RT):
     ones = torch.ones((RT.shape[0],1))
     zeros[:,:,3] = ones[:]
 
-    invRT = torch.cat((invRT,zeros),dim=1)
+    invRT = torch.cat((invRT,zeros.to('cuda:'+str(invRT.get_device()))),dim=1)
 
     return(invRT)
 
 def getImageTensorFrmPtCloud(projectionMat, ptCld):
 
-    projPts = torch.matmul(projectionMat, ptCld)
+    projPts = torch.matmul(projectionMat.to('cuda:'+str(ptCld.get_device())), ptCld)
 
     projPts[:,0,:] = torch.div(projPts[:,0,:], projPts[:,2,:])
     projPts[:,1,:] = torch.div(projPts[:,1,:], projPts[:,2,:])
@@ -136,11 +137,11 @@ def filterPtClds(ptCld2D, ptCld3D, imgHeight, imgWidth):
         tempTensor3D = ptCld3D[eachChannel, mask[eachChannel,:]]
 
         if tempTensor2D.shape[0] < maxSize2D:
-            zeroTensor = torch.zeros((maxSize2D - tempTensor2D.shape[0], tempTensor2D.shape[1]))
+            zeroTensor = torch.zeros((maxSize2D - tempTensor2D.shape[0], tempTensor2D.shape[1])).to('cuda:'+str(tempTensor2D.get_device()))
             tempTensor2D = torch.vstack((tempTensor2D,zeroTensor))
 
         if tempTensor3D.shape[0] < maxSize3D:
-            zeroTensor = torch.zeros((maxSize3D - tempTensor3D.shape[0], tempTensor3D.shape[1]))
+            zeroTensor = torch.zeros((maxSize3D - tempTensor3D.shape[0], tempTensor3D.shape[1])).to('cuda:'+str(tempTensor3D.get_device()))
             tempTensor3D = torch.vstack((tempTensor3D,zeroTensor))
         
         tensorImgCoord[eachChannel,:,:] = tempTensor2D
@@ -161,18 +162,95 @@ def createImage(ptCld2D,addChannel, imgWidth, imgHeight):
     minValue = torch.zeros(addChannelMax.shape)
 
     # filter points
-    addChannel = (((addChannel[:] - addChannelMin[:])/(addChannelMax[:]-addChannelMin[:]))*(maxValue[:]-minValue[:])) + minValue[:]
+    addChannel = (((addChannel[:] - addChannelMin)/(addChannelMax-addChannelMin))*(maxValue-minValue)) + minValue
+    addChannel = torch.unsqueeze(addChannel,dim=2)
 
     # Convert points to int 
     ptCld2D = ptCld2D.type(torch.int)
+
+    # Convert points back to long
+    ptCld2D = ptCld2D.type(torch.long)
 
 
     # create a new image
     newImg = torch.zeros((ptCld2D.shape[0], imgHeight, imgWidth, noChannel))
 
-    newImg[:, ptCld2D[:,1], ptCld2D[:,0]] =255 - addChannel[:]
+    # For each channel of batch size
+    #for batchId in range(newImg.shape[0]):
+    newImg[:, ptCld2D[:,:,1], ptCld2D[:,:,0]] =255 - addChannel[:,:]
 
     return(newImg)
+
+
+def applySobelOperator(inputTensor):
+    """
+        |1 0 -1|    | 1  2  1| 
+        |2 0 -2|    | 0  0  0|
+        |1 0 -1|    |-1 -2 -1|
+    """
+
+    device = inputTensor.get_device()
+
+    sobel0 = np.array([[1,2,1],[0,0,0],[-1,-2,-1]])
+    sobel90 = np.array([[1, 0 ,-1],[2,0,-2],[1,0,-1]])
+
+    outChannel = 1
+    inChannel = 1
+
+    inputTensor = torch.transpose(inputTensor,3,1)
+    channel = inputTensor.shape[1]
+    sobel0Tensor = torch.from_numpy(sobel0).float().unsqueeze(0).unsqueeze(0)
+    sobel90Tensor = torch.from_numpy(sobel90).float().unsqueeze(0).unsqueeze(0)
+
+    sobel0ImgConv = torch.nn.Conv2d(inChannel, outChannel, kernel_size=3, stride=1, padding=1, bias=False)
+
+    if device >=0:
+        sobel0Tensor = sobel0Tensor.to('cuda:'+str(device))
+        sobel90Tensor = sobel90Tensor.to('cuda:'+str(device))
+        sobel0ImgConv = sobel0ImgConv.to('cuda:'+str(device))
+
+    
+    sobel0ImgConv.weight = torch.nn.Parameter(sobel0Tensor)
+    sobel0Img = sobel0ImgConv(inputTensor)
+
+    sobel90ImgConv = torch.nn.Conv2d(inChannel, outChannel, kernel_size=3, stride=1, padding=1, bias=False)
+    sobel90ImgConv.weight = torch.nn.Parameter(sobel90Tensor)
+    sobel90Img = sobel90ImgConv(inputTensor)
+    
+    edgeImg = torch.sqrt(torch.pow(sobel0Img,2)+torch.pow(sobel90Img,2))
+
+
+    return(edgeImg)
+
+def performCrossCorrelation(imgTensor0, imgTensor1):
+    print()
+
+
+def calculateEucledianDistTensor(tensor1, tensor2):
+    euclideanDistance =  torch.empty(tensor1.shape[0],tensor1.shape[1])
+    for channel in range(0,tensor1.shape[0]):
+        euclideanDistance[channel] = torch.dist(tensor1[channel,0,:], tensor2[channel,0,:], p=2)
+
+    return(euclideanDistance)
+
+def calculateEucledianDistOfPointClouds(PtCld0, PtCld1):
+
+    # Claculate the mean euclidean distance between each point point cloud
+    meanEucledianDist = torch.empty(PtCld0.shape[0],1)
+    for channel in range(0,PtCld0.shape[0]):
+        D = torch.sqrt(torch.pow(PtCld1[channel,:,0] - PtCld0[channel,:,0],2) 
+            + torch.pow(PtCld1[channel,:,1] - PtCld0[channel,:,1],2) 
+            + torch.pow(PtCld1[channel,:,2] - PtCld0[channel,:,2],2))
+
+        meanEucledianDist[channel,:] = torch.mean(D)
+   
+
+    return(meanEucledianDist)
+
+
+
+
+
 
 
 

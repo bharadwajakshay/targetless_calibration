@@ -48,6 +48,10 @@ class dataLoader(Dataset):
         # Read the longest point cloud 
         self.maxPtCldSize = self.data[-1]
 
+        # remove the last entry as It is not needed any more
+        self.data = self.data[:-1]
+        self.data = self.data[:2000]
+
     def __len__(self):
         return(len(self.data))
 
@@ -75,6 +79,10 @@ class dataLoader(Dataset):
         # Read the color image
         colorImgFileName = self.data[key]["colorImgFileName"]
         colorImgW, colorImgH, colorImg = readimgfromfile(colorImgFileName)
+        
+        # Convert the image to grayscale
+        grayImg = cv2.cvtColor(colorImg,cv2.COLOR_BGR2GRAY)
+
         # normalize the image
         colorImg = normalizeImg(colorImg)
 
@@ -97,9 +105,9 @@ class dataLoader(Dataset):
         transform = np.asarray(transform)
         transform = np.reshape(transform,(4,4))
 
-        return(ptCld, colorImg, depthImg, intesnityImg, transform)
+        return(ptCld, colorImg, grayImg, depthImg, intesnityImg, transform)
 
 if __name__ == "__main__":
     obj = dataLoader('/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/processed/train/trainingdata.json')
-    x0, x1, x2, x3, x5 = obj.__getitem__(int(15))
+    x0, x1, x2, x3, x4, x5 = obj.__getitem__(int(15))
     print("Tested")

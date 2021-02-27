@@ -70,7 +70,7 @@ def main():
     trainingDataDirRaw = rawDataDir+'train/'
     testDataDirRaw = rawDataDir+'test/'
 
-    procDataDir = os.path.join(sys.argv[1],'processed')
+    procDataDir = os.path.join(sys.argv[1],'processed_test')
 
     trainingDataDirProc = os.path.join(procDataDir,'train')
     trainingJsonFile = os.path.join(trainingDataDirProc,'trainingdata.json')

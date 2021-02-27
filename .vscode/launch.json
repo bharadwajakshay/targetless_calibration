@@ -31,18 +31,5 @@
             "program": "${workspaceFolder}/src/tfrecorder_test.py",
             "console": "integratedTerminal"
         },
-        {
-            "name": "Python: Prepare Data",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/data_prep/decalibration.py",
-            "console": "integratedTerminal",
-            "args": [
-                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/train/2011_09_26/calib_velo_to_cam.txt",
-                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/train/2011_09_26/calib_cam_to_cam.txt",
-                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/train/2011_09_26/2011_09_26_drive_0009_sync/image_02/data/",
-                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/train/2011_09_26/2011_09_26_drive_0009_sync/velodyne_points/data/"
-            ]
-        }
     ]
 }

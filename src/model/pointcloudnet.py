@@ -8,7 +8,7 @@ from data_prep.helperfunctions import *
 from data_prep.transforms import *
 from common.tensorTools import *
 from common.pytorch3D import *
-
+from model.NCC import NCC
 
 def conv(in_channels, out_channels, kernel_size=3, stride_len = 1, dilation = 1):
     return nn.Conv1d(in_channels, out_channels, kernel_size = kernel_size, 
@@ -276,8 +276,34 @@ class get_loss(torch.nn.Module):
         self.criterion = nn.MSELoss()
         #self.criterion = nn.KLDivLoss()
 
-    def forward(self, predDepth, predIntensity, ptCloud, targetTransform):
+    def forward(self, predDepth, predIntensity, ptCloud, grayImage, targetTransform, device):
 
+        """
+        Make sure that all the variables are in the same device
+        """
+        predDepthRot = predDepth[1]
+        predDepthT   = predDepth[0]
+
+        predIntensityRot = predIntensity[1]
+        predIntensityT = predIntensity[0]
+
+        if predDepthRot.get_device() != device:
+            predDepthRot = predDepthRot.to('cuda:'+str(device))
+            predDepthT = predDepth[1].to('cuda:'+str(device))
+        
+        if predIntensity[0].get_device() != device:
+            predIntensityRot = predIntensityRot.to('cuda:'+str(device))
+            predIntensityT = predIntensityT.to('cuda:'+str(device))
+
+        if ptCloud.get_device() != device:
+            ptCloud = ptCloud.to('cuda:'+str(device))
+
+        if targetTransform.get_device() != device:
+            targetTransform = targetTransform.to('cuda:'+str(device))
+
+        if grayImage.get_device() != device:
+            grayImage = grayImage.to('cuda:'+str(device))
+ 
         # Read the calibration parameters
         calibFileRootDir = "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/train/2011_09_26"
         [P_rect, R_rect, R, T] = findtheCalibparameters(calibFileRootDir)
@@ -292,23 +318,25 @@ class get_loss(torch.nn.Module):
         # Detach the intensities and attach the unit coloumn 
         intensity = ptCloud[:,:,3]
         ptCloud = ptCloud[:,:,:3]
-        ones = torch.ones((ptCloud.shape[0],ptCloud.shape[1],1))
+        ones = torch.ones((ptCloud.shape[0],ptCloud.shape[1],1)).to('cuda:'+str(ptCloud.get_device()))
+
         ptCloud = torch.cat([ptCloud,ones],dim=2)
         ptCloud = torch.transpose(ptCloud, 2,1)
         
         # Corecting for RT
-        ptCloud = torch.matmul(RT,ptCloud[:])
+
+        ptCloud = torch.matmul(RT.to('cuda:'+str(ptCloud.get_device())),ptCloud[:])
 
         # Correcting for rotation cam R00  
-        ptCloud = torch.matmul(R_rect, ptCloud)
+        ptCloud = torch.matmul(R_rect.to('cuda:'+str(ptCloud.get_device())), ptCloud)
 
         # Use this Point cloud as the target point cloud to be achieved after multiplying the point cloud by
         # predicted transforms
         ptCloudTarget = ptCloud
 
         # Create the transformation function 
-        predDepthTransform = createRTMatTensor(predDepth)
-        predIntensityTransform = createRTMatTensor(predIntensity)
+        predDepthTransform = createRTMatTensor(predDepthRot, predDepthT)
+        predIntensityTransform = createRTMatTensor(predIntensityRot, predIntensityT)
 
         """
 
@@ -333,16 +361,17 @@ class get_loss(torch.nn.Module):
         invTargetRT = calculateInvRTTensor(targetTransform)
 
         # Extract the translation from target transform
-        targetT = targetTransform[:,:3,3]
+        targetT = targetTransform[:,:3,3].unsqueeze(1)
 
         # Calculate the distance between the target and the predicted
-        euclideanDistanceIntensity = torch.dist(predIntensity[0], targetT, p=2)
-        euclideanDistanceDepth = torch.dist(predDepth[0], targetT, p=2)
+        euclideanDistanceIntensity = calculateEucledianDistTensor(predIntensityT,targetT)
+        euclideanDistanceDepth = calculateEucledianDistTensor(predDepthT, targetT)
 
         # Calculate the angular distance between the target and predicted
-        targetR = matrix_to_euler_angles(targetTransform[:,:3,:3],"ZXY")
-        euclideanAngularDistanceDepth = torch.dist(torch.rad2deg(predDepth[1]), torch.rad2deg(targetR) , p=2)
-        euclideanAngularDistanceIntensity = torch.dist(torch.rad2deg(predIntensity[1]), torch.rad2deg(targetR) , p=2)
+        targetR = matrix_to_euler_angles(targetTransform[:,:3,:3],"ZXY").unsqueeze(1)
+
+        euclideanAngularDistanceDepth = calculateEucledianDistTensor(torch.rad2deg(predDepthRot), torch.rad2deg(targetR))
+        euclideanAngularDistanceIntensity = calculateEucledianDistTensor(torch.rad2deg(predIntensityRot), torch.rad2deg(targetR))
 
         # One component of the loss function 
         # Eucliedian depth loss
@@ -365,6 +394,8 @@ class get_loss(torch.nn.Module):
         ptCloud = torch.cat([ptCloud,ones],dim=2)
         ptCloud = torch.transpose(ptCloud, 2,1)
 
+        ptCloudTarget = ptCloud
+
         # Use this point cloud as the base for all the future caluclations 
         ptCloudBase = torch.matmul(invTargetRT, ptCloud)
 
@@ -377,13 +408,22 @@ class get_loss(torch.nn.Module):
         finalDepthPredPtCld = torch.matmul(predDepthTransform, ptCloudBase.type(torch.float))
         finalIntensityPredCld = torch.matmul(predIntensityTransform, ptCloudBase.type(torch.float))
 
+        # Calculate Euclidean Distance between the 
+        euclideanDistanceDepthPtCld = calculateEucledianDistOfPointClouds(torch.transpose(finalDepthPredPtCld,2,1)[:,:,:3], torch.transpose(ptCloudTarget,2,1)[:,:,:3])
+        euclideanDistanceIntensityPtCld = calculateEucledianDistOfPointClouds(torch.transpose(finalIntensityPredCld,2,1)[:,:,:3], torch.transpose(finalIntensityPredCld,2,1)[:,:,:3])
+
+
+        """
+
         # Step 2
         # Get the image tensor by projecting the point cloud back to image plane
         # These points are in the image coordinate frame
+        targetPredPtCldImgCord = getImageTensorFrmPtCloud(P_rect, ptCloudTarget)
         finalDepthPredPtCldImgCord = getImageTensorFrmPtCloud(P_rect.type(torch.float), finalDepthPredPtCld)
         finalIntensityPredCldImgCord = getImageTensorFrmPtCloud(P_rect.type(torch.float), finalIntensityPredCld)
 
         # Transpose the vectors to create a mask
+        targetPredPtCldImgCord = torch.transpose(targetPredPtCldImgCord,2,1)
         finalDepthPredPtCldImgCord = torch.transpose(finalDepthPredPtCldImgCord,2,1)
         finalIntensityPredCldImgCord = torch.transpose(finalIntensityPredCldImgCord,2,1)
 
@@ -391,20 +431,48 @@ class get_loss(torch.nn.Module):
         imgHeight = 375
         imgWidth = 1242
 
-        finalDepthPredPtCld = torch.transpose(finalDepthPredPtCld,2,1)
-
         # Replace the 4th coloum of pt by intensities
-        finalDepthPredPtCld = torch.cat((finalDepthPredPtCld[:,:,:3], torch.unsqueeze(intensity,dim=2)),dim=2)
+        ptCloudTarget = torch.cat((torch.transpose(ptCloudTarget,2,1)[:,:,:3], torch.unsqueeze(intensity,dim=2)),dim=2)
+        finalDepthPredPtCld = torch.cat((torch.transpose(finalDepthPredPtCld,2,1)[:,:,:3], torch.unsqueeze(intensity,dim=2)),dim=2)
         finalIntensityPredCld = torch.cat((torch.transpose(finalIntensityPredCld,2,1)[:,:,:3], torch.unsqueeze(intensity,dim=2)),dim=2)
-            
+
+        targetImgCoord, targetPtCld = filterPtClds(targetPredPtCldImgCord, ptCloudTarget, imgHeight, imgWidth)
         finalDepthImgCoord, finalDepthPredPtCld = filterPtClds(finalDepthPredPtCldImgCord, finalDepthPredPtCld, imgHeight, imgWidth)
         finalIntImgCoord, finalIntensityPredCld = filterPtClds(finalIntensityPredCldImgCord, finalIntensityPredCld, imgHeight, imgWidth)
         
         # create Depth Image tensor
+        targetDepthTensor = createImage(targetImgCoord, targetPtCld[:,:,2],imgWidth, imgHeight)
+        targetIntensityTensor = createImage(targetImgCoord, targetPtCld[:,:,3],imgWidth, imgHeight)
         depthTensor = createImage(finalDepthImgCoord,finalDepthPredPtCld[:,:,2], imgWidth, imgHeight)
         IntensityTensor = createImage(finalIntImgCoord,finalIntensityPredCld[:,:,3], imgWidth, imgHeight)
 
 
-        return(lossEuclideanDistanceBtwTransform)
+        
+        # Create a sobel Kernel to run thru the image
+        edgeDepthTensor = applySobelOperator(depthTensor)
+        edgeintensityTensor = applySobelOperator(IntensityTensor)
+        grayImage = applySobelOperator(grayImage.type(torch.float))
+
+
+        # Cross-Correlation
+        nccDepth = NCC(torch.transpose(targetDepthTensor,3,1))
+        nccIntensity = NCC(targetIntensityTensor)
+
+        # Move it cuda 
+        nccDepth = nccDepth.to('cuda:'+str(device))
+        nccIntensity = nccIntensity.to('cuda:'+str(device))
+
+        crossCorrelationDepth = nccDepth(torch.transpose(depthTensor[None,...],3,1))
+        crossCorrelationIntensity = nccIntensity(IntensityTensor[None,...])
+
+        # Get MaxLikely hood sum
+        """
+
+        euclideanDistanceLoss = torch.div(torch.mean(euclideanDistanceDepthPtCld)+torch.mean(euclideanDistanceIntensityPtCld),2)
+
+        totalLOSS = euclideanDistanceLoss + lossEuclideanDistanceBtwTransform
+        
+
+        return(torch.mean(totalLOSS))
 
 

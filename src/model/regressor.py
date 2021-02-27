@@ -51,11 +51,14 @@ class regressor(nn.Module):
         Feature matching network
         """
         x = self.conv1x1B0(x)
-        x = self.Relu(self.bn0(x))
+        x = self.bn0(x)
+        x = self.Relu(x)
         x = self.conv1x1B1(x)
-        x = self.Relu(self.bn1(x))
+        x = self.bn1(x)
+        x = self.Relu(x)
         x = self.conv1x1B2(x)
-        x = self.Relu(self.bn2(x))
+        x = self.bn2(x)
+        x = self.Relu(x)
         x = self.avgpool(x.transpose(1,2))
 
         """

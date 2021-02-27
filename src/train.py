@@ -16,72 +16,146 @@ os.environ["CUDA_VISIBLE_DEVICES"] = '0,1,2'
 from model import pointcloudnet
 import concurrent.futures
 from common.utilities import *
+from common.pytorch3D import *
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 sys.path.append(os.path.join(ROOT_DIR, 'model'))
 
-def test(model_pointnet, model_resnet, model_regressor, dataLoader):
-    eucledian_dist = []
-    predr = []
-    predp = []
-    predy = []
-    targetr = []
-    targetp = []
-    targety = []
+
+os.environ["CUDA_VISIBLE_DEVICES"] = '0,1,2'
+
+batch_size = 10
+
+
+def test(colorImgModel, depthImgModel, IntensiyImgModel, regressorModel, dataLoader):
+
+    x = np.empty((0,1))
+    y = np.empty((0,1))
+    z = np.empty((0,1))
+    roll = np.empty((0,1))
+    pitch = np.empty((0,1))
+    yaw = np.empty((0,1))
 
     for j, data in tqdm(enumerate(dataLoader,0), total=len(dataLoader)):
-        inputPtTensor, imgTensor, transformTensor, targetTensor = data
-        
-        inputPtTensor = targetTensor.transpose(2,1)
-        inputPtTensor = inputPtTensor
 
-        poinrFeatureMap = model_pointnet(inputPtTensor)
-        imgTensor = imgTensor.transpose(3,1)
-        imgFeatureMap = model_resnet(imgTensor).unsqueeze(dim=2)
-        aggregatedTensor = torch.cat([poinrFeatureMap,imgFeatureMap.to('cuda:2')],dim=2).transpose(2,1)
-        pred = model_regressor(aggregatedTensor)
-        [eucledeanDist, predTransform, targetTransform] = calculateEucledianDist(pred, transformTensor, inputPtTensor, targetTensor)
-        eucledian_dist.append(eucledeanDist)
-        [r,p,y] = extractRotnTranslation(predTransform)
-        predr.append(r)
-        predp.append(p)
-        predy.append(y)
-        [r,p,y] = extractRotnTranslation(targetTransform)
-        targetr.append(r)
-        targetp.append(p)
-        targety.append(y)
+        ptCldTensor, clrImgTensor, grayImgTensor, depthImgTensor, intensityImgTensor, targetTransform = data
+        grayImgTensor = torch.unsqueeze(grayImgTensor,3)
+
+        # Transpose the tensors such that the no of channels are the 2nd term
+        clrImgTensor = clrImgTensor.transpose(3,1).to('cuda:0')
+        depthImgTensor = depthImgTensor.transpose(3,1).to('cuda:1')
+        intensityImgTensor = intensityImgTensor.transpose(3,1).to('cuda:2')
+
+        # Cuda 0
+        featureMapClrImg = colorImgModel(clrImgTensor)
+        # Cuda 1
+        featureMapDepthImg = depthImgModel(depthImgTensor)
+        # Cuda 2
+        featureMapIntensityImg = IntensiyImgModel(intensityImgTensor)
+
+        # Cuda 0
+        aggClrDepthFeatureMap = torch.cat([featureMapDepthImg.to('cuda:0'),featureMapClrImg],dim=1)
+
+        # Cuda 0
+        aggClrIntensityFeatureMap = torch.cat([featureMapIntensityImg.to('cuda:0'),featureMapClrImg],dim=1)
+
+        aggClrDepthFeatureMap = aggClrDepthFeatureMap.unsqueeze(dim=2)
+        [predDepthT, predDepthR]  = regressorModel(aggClrDepthFeatureMap.transpose(2,1))
+
+        aggClrIntensityFeatureMap = aggClrIntensityFeatureMap.unsqueeze(dim=2)
+        [predIntensityT, predIntensityR]  = regressorModel(aggClrIntensityFeatureMap.transpose(2,1))
+
+        # Calculate the diff between predicted transform and target transform 
+        targetT = targetTransform[:,:3,3].unsqueeze(1)
+        targetR = matrix_to_euler_angles(targetTransform[:,:3,:3],"ZXY").unsqueeze(1)
+
+        diffDepthT = (predDepthT.to('cpu') - targetT).numpy()
+        diffDepthR = (predDepthR.to('cpu')  - targetR).numpy()
+
+        diffIntensityT = (predIntensityT.to('cpu')  - targetT).numpy()
+        diffIntensityR = (predIntensityR.to('cpu')  - targetR).numpy()
+
         
-    return(np.mean(eucledian_dist),np.mean(predr),np.mean(predp),np.mean(predy),np.mean(targetr),np.mean(targetp),np.mean(targety))
+        if(x.size == 0):
+            x = np.append(x,diffDepthT[:,0,0].flatten())
+            x = np.concatenate((x,diffIntensityT[:,0,0].flatten()))
+            y = np.append(y,diffDepthT[:,0,1].flatten())
+            y = np.concatenate((y,diffIntensityT[:,0,1].flatten()))
+            z = np.append(z,diffDepthT[:,0,2].flatten())
+            z = np.concatenate((z,diffIntensityT[:,0,2].flatten()))
+
+            roll = np.append(roll,diffDepthT[:,0,0].flatten())
+            roll = np.concatenate((roll,diffIntensityT[:,0,0].flatten()))
+            pitch = np.append(pitch,diffDepthT[:,0,1].flatten())
+            pitch = np.concatenate((pitch,diffIntensityT[:,0,1].flatten()))
+            yaw = np.append(yaw,diffDepthT[:,0,2].flatten())
+            yaw = np.concatenate((yaw,diffIntensityT[:,0,2].flatten()))
+
+
+        else:
+            x = np.concatenate((x,diffDepthT[:,0,0].flatten()))
+            x = np.concatenate((x,diffIntensityT[:,0,0].flatten()))
+            y = np.concatenate((y,diffDepthT[:,0,1].flatten()))
+            y = np.concatenate((y,diffIntensityT[:,0,1].flatten()))
+            z = np.concatenate((z,diffDepthT[:,0,1].flatten()))
+            z = np.concatenate((z,diffIntensityT[:,0,2].flatten()))
+
+            roll = np.concatenate((roll,diffDepthT[:,0,0].flatten()))
+            roll = np.concatenate((roll,diffIntensityT[:,0,0].flatten()))
+            pitch = np.concatenate((pitch,diffDepthT[:,0,0].flatten()))
+            pitch = np.concatenate((pitch,diffIntensityT[:,0,1].flatten()))
+            yaw = np.concatenate((yaw,diffDepthT[:,0,0].flatten()))
+            yaw = np.concatenate((yaw,diffIntensityT[:,0,2].flatten()))
+            
+        
+    return(np.mean(x),np.mean(y),np.mean(z),np.mean(roll),np.mean(pitch),np.mean(yaw))
 
 
 def main():
 
     # Default parameters 
-    batch_size = 10
-    epochs = 50
+    epochs = 30
     learning_rate = 0.0001 # 10^-5
     decay_rate = 1e-4
 
+
+    """
+    +---------------------------+--------+
+    |      Model/Variable       |  GPU   |
+    +---------------------------+--------+
+    | RESNet50: Color Image     | CUDA 0 |
+    | RESNet50: Depth Image     | CUDA 1 |
+    | RESNet50: Intensity Image | CUDA 2 |
+    | Regressor NW              | CUDA 0 |
+    | LossFunction              | CUDA 1 |
+    | Color Image Tensor        | CUDA 0 |
+    | Depth Image Tensor        | CUDA 1 |
+    | Intensity Image Tensor    | CUDA 2 |
+    +---------------------------+--------+
+    """
+
+
+
     # Choose the RESNet network used to get features from the images 
-    resnetClrImg = resnet50(pretrained=True)
-    resnetDepthImg = resnet50(pretrained=True)
-    resnetIntensityImg = resnet50(pretrained=True)
+    resnetClrImg = resnet50(pretrained=True).to('cuda:0')
+    resnetDepthImg = resnet50(pretrained=True).to('cuda:1')
+    resnetIntensityImg = resnet50(pretrained=True).to('cuda:2')
 
     # Hyper Parameters 
     TRAIN_DATASET = dataLoader('/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/processed/train/trainingdata.json')
     TEST_DATASET = dataLoader('/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/processed/test/testingdata.json')
 
     trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=batch_size, shuffle=False, num_workers=0)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=1, shuffle=False, num_workers=0)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=batch_size, shuffle=False, num_workers=0)
     #MODEL = importlib.import_module(pointcloudnet)
 
     # empty the CUDA memory
     torch.cuda.empty_cache()
 
-    regressor_model = regressor.regressor()
-    loss_function = pointcloudnet.get_loss()
+    regressor_model = regressor.regressor().to('cuda:0')
+    loss_function = pointcloudnet.get_loss().to('cuda:1')
 
     
 
@@ -99,42 +173,58 @@ def main():
     global_epoch = 0
     global_step = 0
     besteulerdistance = 100
+    xErr = 100
+    yErr = 100
+    zErr = 100
+    rErr = 100
+    pErr = 100
+    yawErr = 100
 
 
     eulerdistances = np.empty(0)
     loss_function_vec = np.empty(0)
-    pred_R = np.empty(0)
-    pred_P = np.empty(0)
-    pred_Y = np.empty(0)
-    target_R = np.empty(0)
-    target_P = np.empty(0)
-    target_Y = np.empty(0)
+    errorX = np.empty(0)
+    errorY = np.empty(0)
+    errorZ = np.empty(0)
+    errorR = np.empty(0)
+    errorP = np.empty(0)
+    errorYa = np.empty(0)
 
     # Training 
     for epoch in range(start_epoch, epochs):
         scheduler.step()
 
         for batch_no, data in tqdm(enumerate(trainDataLoader,0), total=len(trainDataLoader), smoothing=0.9):
-            
+        
             # Expand the data into its respective components
-            ptCldTensor, clrImgTensor, depthImgTensor, intensityImgTensor, transformTensor = data
+            ptCldTensor, clrImgTensor, grayImgTensor, depthImgTensor, intensityImgTensor, transformTensor = data
+
+            grayImgTensor = torch.unsqueeze(grayImgTensor,3)
             
             optimizer.zero_grad()
             resnetClrImg = resnetClrImg.eval()
             resnetDepthImg = resnetDepthImg.eval()
             resnetIntensityImg = resnetIntensityImg.eval()
+            regressor_model = regressor_model.train()
+
 
             # Transpose the tensors such that the no of channels are the 2nd term
-            clrImgTensor = clrImgTensor.transpose(3,1)
-            depthImgTensor = depthImgTensor.transpose(3,1)
-            intensityImgTensor = intensityImgTensor.transpose(3,1)
+            clrImgTensor = clrImgTensor.transpose(3,1).to('cuda:0')
+            depthImgTensor = depthImgTensor.transpose(3,1).to('cuda:1')
+            intensityImgTensor = intensityImgTensor.transpose(3,1).to('cuda:2')
 
+            # Cuda 0
             featureMapClrImg = resnetClrImg(clrImgTensor)
+            # Cuda 1
             featureMapDepthImg = resnetDepthImg(depthImgTensor)
+            # Cuda 2
             featureMapIntensityImg = resnetIntensityImg(intensityImgTensor)
 
-            aggClrDepthFeatureMap = torch.cat([featureMapDepthImg,featureMapClrImg],dim=1)
-            aggClrIntensityFeatureMap = torch.cat([featureMapIntensityImg,featureMapClrImg],dim=1)
+            # Cuda 0
+            aggClrDepthFeatureMap = torch.cat([featureMapDepthImg.to('cuda:0'),featureMapClrImg],dim=1)
+
+            # Cuda 0
+            aggClrIntensityFeatureMap = torch.cat([featureMapIntensityImg.to('cuda:0'),featureMapClrImg],dim=1)
 
             aggClrDepthFeatureMap = aggClrDepthFeatureMap.unsqueeze(dim=2)
             [predDepthT, predDepthR]  = regressor_model(aggClrDepthFeatureMap.transpose(2,1))
@@ -142,46 +232,45 @@ def main():
             aggClrIntensityFeatureMap = aggClrIntensityFeatureMap.unsqueeze(dim=2)
             [predIntensityT, predIntensityR]  = regressor_model(aggClrIntensityFeatureMap.transpose(2,1))
 
-            loss = loss_function([predDepthT, predDepthT], [predIntensityT, predIntensityR], ptCldTensor, transformTensor)
+            # Cuda 1
+            loss = loss_function([predDepthT, predDepthT], [predIntensityT, predIntensityR], ptCldTensor, grayImgTensor, transformTensor, 1)
       
             loss.backward()
             optimizer.step()
             global_step += 1
 
         with torch.no_grad():
-            eulerDist, predr, predp, predy, targetr, targetp, targety = test(network_model.eval(), resnet, regressor_model.eval(), testDataLoader)
-            eulerdistances = np.append(eulerdistances,eulerDist)
-            pred_R = np.append(pred_R, predr)
-            pred_P = np.append(pred_P, predp)
-            pred_Y = np.append(pred_Y, predy)
-            target_R = np.append(target_R, targetr)
-            target_P = np.append(target_P, targetp)
-            target_Y = np.append(target_Y, targety)
-            print("Calculated mean Euler Distance: "+str(eulerDist)+" and the loss: "+str(loss_function_vec[global_epoch])+" for Global Epoch: "+str(global_epoch))
-            if(eulerDist<besteulerdistance):
-                besteulerdistance = eulerDist
+            meanXError, meanYError, meanZError, meanRollError, meanPitchError, meanYawError = test(resnetClrImg, resnetDepthImg, resnetIntensityImg, regressor_model.eval(), testDataLoader)
+
+            errorX = np.append(errorX, meanXError)
+            errorY = np.append(errorY, meanYError)
+            errorZ = np.append(errorZ, meanZError)
+            errorR = np.append(errorR, meanRollError)
+            errorP = np.append(errorP, meanPitchError)
+            errorYa = np.append(errorYa, meanYawError)
+
+            print("Calculated mean Errors: X = "+str(meanXError)+" Y = "+str(meanYError)+" Z = "+str(meanZError)+" Roll = "+str(meanRollError)+" Pitch = "+str(meanPitchError)+" Yaw = "+str(meanYawError))
+            if(xErr>meanXError or yErr>meanYError or zErr>meanZError or rErr>meanRollError or pErr>meanPitchError or yawErr>meanYawError):
 
                 # make sure you save the model as checkpoint
                 print("saving the model")
                 savepath = "/tmp/bestmodel_targetlesscalibration.pth"
                 state = {
                     'epoch': global_epoch,
-                    'bestEulerDist': besteulerdistance,
-                    'model_state_dict_1':network_model.state_dict(),
                     'model_state_dict_2':regressor_model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                 }
                 torch.save(state,savepath)
 
         global_epoch += 1
-    np.save('/tmp/eulerdistances.npy',eulerdistances)
-    np.save('/tmp/loss.npy', loss_function_vec)
-    np.save('/tmp/predicted_R.npy', pred_R)
-    np.save('/tmp/predicted_T.npy', pred_P)
-    np.save('/tmp/predicted_P.npy', pred_Y)
-    np.save('/tmp/target_R.npy', target_R)
-    np.save('/tmp/target_T.npy', target_P)
-    np.save('/tmp/target_P.npy', target_Y)
+
+
+    np.save('/tmp/predicted_R.npy', errorX)
+    np.save('/tmp/predicted_T.npy', errorY)
+    np.save('/tmp/predicted_P.npy', errorZ)
+    np.save('/tmp/target_R.npy', errorR)
+    np.save('/tmp/target_T.npy', errorP)
+    np.save('/tmp/target_P.npy', errorYa)
 
     
     print("something")
