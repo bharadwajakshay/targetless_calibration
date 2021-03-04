@@ -151,3 +151,7 @@ data/*
 *.png
 *.jpg
 *.tiff
+
+# Pretrained model
+*.pth
+
