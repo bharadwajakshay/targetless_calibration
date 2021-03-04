@@ -1,6 +1,7 @@
 import torch
 from common.pytorch3D import *
 import numpy as np
+from data_prep.helperfunctions import *
 
 def invTransformation():
     return(invRT)
@@ -247,10 +248,48 @@ def calculateEucledianDistOfPointClouds(PtCld0, PtCld1):
 
     return(meanEucledianDist)
 
+def getGroundTruthPointCloud(ptCloud, P_rect, R_rect, RT):
+
+    # Correct the point cloud 
+    # Detach the intensities and attach the unit coloumn 
+    intensity = ptCloud[:,:,3]
+    ptCloud = ptCloud[:,:,:3]
+    ones = torch.ones((ptCloud.shape[0],ptCloud.shape[1],1)).to('cuda:'+str(ptCloud.get_device()))
+
+    ptCloud = torch.cat([ptCloud,ones],dim=2)
+    ptCloud = torch.transpose(ptCloud, 2,1)
+        
+    # Corecting for RT
+    ptCloud = torch.matmul(RT.to('cuda:'+str(ptCloud.get_device())),ptCloud[:])
+
+    # Correcting for rotation cam R00  
+    ptCloud = torch.matmul(R_rect.to('cuda:'+str(ptCloud.get_device())), ptCloud)
+
+    return(ptCloud)
 
 
 
+def findCalibParameterTensor(rootDir):
 
+    [P_rect, R_rect, R, T] = findtheCalibparameters(rootDir)
+    # Convert the NumPy array to Tensor
+    P_rect = torch.from_numpy(P_rect)
+    R_rect = torch.from_numpy(R_rect)
+    RT = createRTMat(R,T)
+    RT = torch.from_numpy(RT)
 
+    return([P_rect, R_rect, RT])
 
+def convertToHomogenousCoordTensor(ptCld):
+    ones = torch.ones((ptCld.shape[0],ptCld.shape[1],1)).to('cuda:'+str(ptCld.get_device()))
+    ptCld = torch.cat([ptCld,ones],dim=2)
 
+    return(ptCld)
+
+def saveModelParams(model, optimizer, epoch, path):
+
+    print("saving the model")
+    state = {'epoch': epoch,
+            'modelStateDict':model.state_dict(),
+            'optimizerStateDict': optimizer.state_dict(),}
+    torch.save(state, path)
