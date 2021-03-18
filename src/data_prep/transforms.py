@@ -38,7 +38,7 @@ def projectptstoimgplane(ptcloud, intensityData, P_rect, R_rect, R, T, randomTF 
     if randomTF:
         # Generate a random transform
         rRand, tRand = generaterandomRT(1)
-        rRand = convertEuler2Rot(rRand)
+        rRand = convertEuler2Rot(rRand, False)
         tfRand = createRTMat(rRand, tRand)
 
         # Calulate the inv of RT to transform the point cloud by
@@ -155,8 +155,8 @@ def generaterandomRT(sample_size):
     [pitch, roll, yaw] range between [-30, 30] 
     and t between [-1, 1]
     '''
-    R = np.random.randint(-3,3,size=(3,sample_size))
-    t =  np.random.normal(-0.3,0.3,[3,sample_size])
+    R = np.random.uniform(-0.087,0.087,size=(3,sample_size))
+    t =  np.random.uniform(-0.1,0.1,[3,sample_size])
     return[R,t]
 
 def convertEuler2Rot(E,degree=True):

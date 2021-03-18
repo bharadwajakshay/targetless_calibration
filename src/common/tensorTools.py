@@ -2,6 +2,37 @@ import torch
 from common.pytorch3D import *
 import numpy as np
 from data_prep.helperfunctions import *
+import cv2
+
+def moveToDevice(tensor, device):
+    # if device = -1 then it means its on CPU
+    if device < 0:
+        return(tensor.to('cpu'))
+
+    if tensor.get_device() != device:
+        tensor = tensor.to('cuda:'+str(device))
+    
+    return(tensor)
+
+def moveAllToDevice(predT, ptCld, grayImage, targetT, device):
+
+    predDepthRot = predT[1]
+    predDepthT   = predT[0]
+
+    # Move predicted transforms 
+    predDepthRot = moveToDevice(predDepthRot, device)
+    predDepthT = moveToDevice(predDepthT, device)
+        
+    # POint Cloud
+    ptCld = moveToDevice(ptCld, device)
+
+    # Target Transform
+    targetT = moveToDevice(targetT, device)
+
+    # Gray Scale Image 
+    grayImage = moveToDevice(grayImage, device)
+
+    return([predDepthRot, predDepthT, ptCld, grayImage, targetT])
 
 def invTransformation():
     return(invRT)
@@ -99,7 +130,8 @@ def calculateInvRTTensor(RT):
 
 def getImageTensorFrmPtCloud(projectionMat, ptCld):
 
-    projPts = torch.matmul(projectionMat.to('cuda:'+str(ptCld.get_device())), ptCld)
+    projectionMat = moveToDevice(projectionMat, ptCld.get_device())
+    projPts = torch.matmul(projectionMat, ptCld)
 
     projPts[:,0,:] = torch.div(projPts[:,0,:], projPts[:,2,:])
     projPts[:,1,:] = torch.div(projPts[:,1,:], projPts[:,2,:])
@@ -108,8 +140,8 @@ def getImageTensorFrmPtCloud(projectionMat, ptCld):
 
 def filterPtClds(ptCld2D, ptCld3D, imgHeight, imgWidth):
     
-    mask = (ptCld2D[:,:,0] < imgWidth) & (ptCld2D[:,:,0] >= 0) &\
-           (ptCld2D[:,:,1] < imgHeight) & (ptCld2D[:,:,1] >= 0) &\
+    mask = (ptCld2D[:,:,0] <= imgWidth-1) & (ptCld2D[:,:,0] >= 0) &\
+           (ptCld2D[:,:,1] <= imgHeight-1) & (ptCld2D[:,:,1] >= 0) &\
            (ptCld3D[:,:,2] > 0)
 
 
@@ -132,6 +164,10 @@ def filterPtClds(ptCld2D, ptCld3D, imgHeight, imgWidth):
 
     tensorImgCoord = torch.empty((ptCld2D.shape[0],maxSize2D,ptCld2D.shape[2]))
     tensor3DCoord = torch.empty((ptCld3D.shape[0],maxSize3D,ptCld3D.shape[2]))
+    min0 = []
+    max0 = []
+    min1 = []
+    max1 = []
 
     for eachChannel in range(0,mask.shape[0]):
         tempTensor2D = ptCld2D[eachChannel, mask[eachChannel,:]]
@@ -147,6 +183,27 @@ def filterPtClds(ptCld2D, ptCld3D, imgHeight, imgWidth):
         
         tensorImgCoord[eachChannel,:,:] = tempTensor2D
         tensor3DCoord[eachChannel,:,:] = tempTensor3D
+
+        """
+        # Debug
+        # Get Max and min of the each channel
+        min0.append(torch.min(tensorImgCoord[eachChannel,:,1]))
+        max0.append(torch.max(tensorImgCoord[eachChannel,:,1]))
+        min1.append(torch.min(tensorImgCoord[eachChannel,:,0]))
+        max1.append(torch.max(tensorImgCoord[eachChannel,:,0]))
+        """
+    
+    """
+    max1 = np.array(max1)
+    max0 = np.array(max0)
+
+    if max0.max() >= 375:
+        print('Something Is wrong')
+
+    if max1.max() >= 1242:
+        print('Something Is wrong')
+
+    """
 
     return(tensorImgCoord, tensor3DCoord)
 
@@ -177,9 +234,11 @@ def createImage(ptCld2D,addChannel, imgWidth, imgHeight):
     newImg = torch.zeros((ptCld2D.shape[0], imgHeight, imgWidth, noChannel))
 
     # For each channel of batch size
-    #for batchId in range(newImg.shape[0]):
-    newImg[:, ptCld2D[:,:,1], ptCld2D[:,:,0]] =255 - addChannel[:,:]
+    for batchId in range(newImg.shape[0]):
+        newImg[batchId, ptCld2D[batchId,:,1], ptCld2D[batchId,:,0]] = 255 - addChannel[batchId,:]
 
+    # Normalizing the depth maps
+    newImg = torch.div(newImg,255)
     return(newImg)
 
 
@@ -243,30 +302,10 @@ def calculateEucledianDistOfPointClouds(PtCld0, PtCld1):
             + torch.pow(PtCld1[channel,:,1] - PtCld0[channel,:,1],2) 
             + torch.pow(PtCld1[channel,:,2] - PtCld0[channel,:,2],2))
 
-        meanEucledianDist[channel,:] = torch.mean(D)
+        meanEucledianDist[channel,:] = torch.max(D)
    
 
     return(meanEucledianDist)
-
-def getGroundTruthPointCloud(ptCloud, P_rect, R_rect, RT):
-
-    # Correct the point cloud 
-    # Detach the intensities and attach the unit coloumn 
-    intensity = ptCloud[:,:,3]
-    ptCloud = ptCloud[:,:,:3]
-    ones = torch.ones((ptCloud.shape[0],ptCloud.shape[1],1)).to('cuda:'+str(ptCloud.get_device()))
-
-    ptCloud = torch.cat([ptCloud,ones],dim=2)
-    ptCloud = torch.transpose(ptCloud, 2,1)
-        
-    # Corecting for RT
-    ptCloud = torch.matmul(RT.to('cuda:'+str(ptCloud.get_device())),ptCloud[:])
-
-    # Correcting for rotation cam R00  
-    ptCloud = torch.matmul(R_rect.to('cuda:'+str(ptCloud.get_device())), ptCloud)
-
-    return(ptCloud)
-
 
 
 def findCalibParameterTensor(rootDir):
@@ -286,6 +325,35 @@ def convertToHomogenousCoordTensor(ptCld):
 
     return(ptCld)
 
+
+def getGroundTruthPointCloud(ptCloud, P_rect, R_rect, RT):
+
+    # Correct the point cloud 
+    # Detach the intensities and attach the unit coloumn 
+    intensity = ptCloud[:,:,3]
+    
+    # Pt Cld Diemensions = C[Nx4]
+    ptCloud = convertToHomogenousCoordTensor(ptCloud[:,:,:3])
+
+
+    # Corecting for RT
+    # Pt Cld Diemensions needed for the multiplication C[4xN]
+    RT = moveToDevice(RT, ptCloud.get_device())
+    ptCloud = torch.matmul(RT, torch.transpose(ptCloud, 2,1))
+
+    # Correcting for rotation cam R00 
+    R_rect = moveToDevice(R_rect, ptCloud.get_device()) 
+    ptCloud = torch.matmul(R_rect, ptCloud)
+
+    # Appened the intensity back to the point cloud
+    # Pt Cld Diemensions = C[4xN]
+    
+    # Convert take the transponse 
+    ptCloud = torch.transpose(ptCloud,2,1)
+
+    return(ptCloud)
+    
+
 def saveModelParams(model, optimizer, epoch, path):
 
     print("saving the model")
@@ -293,3 +361,69 @@ def saveModelParams(model, optimizer, epoch, path):
             'modelStateDict':model.state_dict(),
             'optimizerStateDict': optimizer.state_dict(),}
     torch.save(state, path)
+
+def sanityCheckDepthMaps(grayImg, depthImg):
+
+    batchsize = grayImg.shape[0]
+    grayImg = grayImg.to('cpu')
+    depthImg = depthImg.to('cpu')
+
+
+    for channel in range(0,batchsize):
+        grayimage = grayImg[channel,:,:].numpy()
+        depthimage = depthImg[channel,:,:].numpy()
+
+        #save images
+        cv2.imwrite("testing/grayscaleimg-"+str(channel)+'.png',grayimage)
+        cv2.imwrite("testing/depthimg-"+str(channel)+'.png',depthimage)
+
+
+def exponentialMap(pred):
+
+    "Exponential Map Operation. Decoupled for SO(3) and translation t"
+    
+    u = pred[:,:,:3].squeeze(1)
+    omega = pred[:,:,3:].squeeze(1)
+
+    theta = torch.sqrt(omega[:,0]*omega[:,0] + omega[:,1]*omega[:,1] + omega[:,2]*omega[:,2]).unsqueeze(1)
+
+    zeros = torch.zeros_like(omega[:,2])
+
+    omega_cross = torch.stack([zeros, -omega[:,2], omega[:,1], omega[:,2], zeros, -omega[:,0], -omega[:,1], omega[:,0], zeros]).transpose(1,0)
+    omega_cross = torch.reshape(omega_cross,[omega_cross.shape[0],3,3])
+
+    #Taylor's approximation for A,B and C not being used currently, approximations preferable for low values of theta
+
+    # A = 1.0 - (tf.pow(theta,2)/factorial(3.0)) + (tf.pow(theta, 4)/factorial(5.0))
+    # B = 1.0/factorial(2.0) - (tf.pow(theta,2)/factorial(4.0)) + (tf.pow(theta, 4)/factorial(6.0))
+    # C = 1.0/factorial(3.0) - (tf.pow(theta,2)/factorial(5.0)) + (tf.pow(theta, 4)/factorial(7.0))
+
+    A = torch.sin(theta)/theta
+
+    B = (1.0 - torch.cos(theta))/(torch.pow(theta,2))
+
+    C = (1.0 - A)/(torch.pow(theta,2))
+
+    omega_cross_square = torch.matmul(omega_cross, omega_cross)
+
+    R = moveToDevice(torch.empty(pred.shape[0],3,3), omega_cross_square.get_device())
+    I = moveToDevice(torch.eye(3,3),omega_cross_square.get_device())
+
+    for batch in range(0,pred.shape[0]):
+        R[batch] = I + A[batch]*omega_cross[batch] + B[batch]*omega_cross_square[batch]
+
+    V  = moveToDevice(torch.empty(pred.shape[0],3,3), omega_cross_square.get_device())
+
+    for batch in range(0,pred.shape[0]):
+        V[batch] = I + B[batch]*omega_cross[batch] + C[batch]*omega_cross_square[batch]
+
+    Vu = torch.matmul(V,u.unsqueeze(2))
+
+    T = torch.cat([R, Vu], 2)
+
+    zeros = moveToDevice(torch.zeros(T.shape[0], 1, T.shape[2]), omega_cross_square.get_device())
+    zeros[:,0,3] = 1.0
+
+    T = torch.cat([T,zeros],1)
+
+    return T

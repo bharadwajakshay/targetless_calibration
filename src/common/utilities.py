@@ -8,6 +8,7 @@ import json
 import importlib
 from pathlib import Path
 import provider
+import math
 
 def getTranslationRot(prediction):
     xyz = xyz = prediction[0:3,:]
@@ -41,3 +42,8 @@ def calculateEucledianDist(predPtCld, targetPtCld):
     euclideanDist = 1000
   
     return(euclideanDist)
+
+
+def truncateToDecimalPt(val, dec) -> float:
+    dec = 10.00 ** dec
+    return(math.trunc(val*dec)/dec)

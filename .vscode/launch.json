@@ -31,5 +31,45 @@
             "program": "${workspaceFolder}/src/tfrecorder_test.py",
             "console": "integratedTerminal"
         },
+        {
+            "name": "Python: dataset-build-color-2",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/data_prep/datasetBuilderColor2.py",
+            "console": "integratedTerminal",
+            "args": [
+                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw_test/2011_09_26/2011_09_26_drive_0001"
+            ]
+        },
+        {
+            "name": "Python: dataset-build-color",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/data_prep/datasetBuilderColor.py",
+            "console": "integratedTerminal",
+            "args": [
+                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw_test/2011_09_26/2011_09_26_drive_0001"
+            ]
+        },
+        {
+            "name": "Python: Generate training data",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/data_prep/createDataset.py",
+            "console": "integratedTerminal",
+            "args": [
+                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/2011_09_26"
+            ]
+        },
+        {
+            "name": "Python: Parse training data",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/data_prep/parseGeneratedData.py",
+            "console": "integratedTerminal",
+            "args": [
+                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/"
+            ]
+        },
     ]
 }

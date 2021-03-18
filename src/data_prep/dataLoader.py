@@ -7,6 +7,7 @@ from PIL import Image
 import cv2
 import math
 
+from torchvision import transforms
 
 
 def normalizePtCld(pointcloud):
@@ -16,9 +17,13 @@ def normalizePtCld(pointcloud):
     pointcloud = pointcloud / m
     return pointcloud
 
-def readimgfromfile(path_to_file):
+def readimgfromfileCV2(path_to_file):
     image = cv2.imread(path_to_file)
     return([image.shape[1],image.shape[0],image])
+
+def readimgfromfilePIL(path_to_file):
+    image = Image.open(path_to_file)
+    return(image.width,image.height,image)
 
 def readvelodynepointcloud(path_to_file):
     '''
@@ -32,25 +37,54 @@ def readvelodynepointcloud(path_to_file):
     # Return points ignoring the reflectivity 
     return(pointcloud[:,:3], intensity_data)
 
-def normalizeImg(image):
+def resizeImgForResNet(image):
+    # Since resnet is trainted to take in 224x224, we want resize the image of the shortest size to be 224
+    imageScaleRatio = 224/375
+    newImW = int(image.shape[1]*imageScaleRatio)
+    newImH = int(image.shape[0]*imageScaleRatio)
+    image = cv2.resize(image,(newImW,newImH))
+    return (image)
+     
+
+def normalizePILGrayImg(image):
     # Convert the image into float
+    image = np.array(image)
+    image = image.astype('float32')
+    for idx in range(0,image.shape[2]):
+        max  = image[:,:,idx].max().max()
+        image[:,:,idx] = np.divide(image[:,:,idx],max)
+    
+    image = Image.fromarray(image.astype('uint8'), 'RGB')
+    return (image)
+
+def normalizePILImg(image):
+    # Convert the image into float
+    image = np.array(image)
     image = image.astype('float32')
     image = np.divide(image,255)
+    
+    image = Image.fromarray(image.astype('uint8'), 'RGB')
     return (image)
 
 class dataLoader(Dataset):
 
-    def __init__ (self, filename='/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/targetless_calibration/data/2011_09_26/2011_09_26_drive_0001_sync/velodyne_points/data/agumenteddata/angles_summary.json'):
+    def __init__ (self, filename, maxPtCldSize, mode='train'):
         self.datafile = filename
         file_descriptor = open(self.datafile,'r')
-        self.data = json.load(file_descriptor)
+        #self.data = json.load(file_descriptor)
+        self.data = file_descriptor.readlines()
 
         # Read the longest point cloud 
-        self.maxPtCldSize = self.data[-1]
+        self.maxPtCldSize = maxPtCldSize
 
+        """
         # remove the last entry as It is not needed any more
         self.data = self.data[:-1]
-        self.data = self.data[:2000]
+        """
+        if mode =='train':
+            self.data = self.data[:28000]
+        if mode =='test':
+            self.data = self.data[28000:]
 
     def __len__(self):
         return(len(self.data))
@@ -58,6 +92,7 @@ class dataLoader(Dataset):
     def __getitem__(self, key):
         return(self.getItem(key))
 
+    """
     def getItem(self, key):
         # read the point cloud 
         ptCldFileName = self.data[key]["pointCldFileName"]
@@ -79,7 +114,8 @@ class dataLoader(Dataset):
         # Read the color image
         colorImgFileName = self.data[key]["colorImgFileName"]
         colorImgW, colorImgH, colorImg = readimgfromfile(colorImgFileName)
-        
+        colorImg = resizeImgForResNet(colorImg)
+
         # Convert the image to grayscale
         grayImg = cv2.cvtColor(colorImg,cv2.COLOR_BGR2GRAY)
 
@@ -106,6 +142,80 @@ class dataLoader(Dataset):
         transform = np.reshape(transform,(4,4))
 
         return(ptCld, colorImg, grayImg, depthImg, intesnityImg, transform)
+    """
+    def getItem(self, key):
+        """
+        [0]  Source depth map
+        [1]  Target depth map
+        [2]  Source intensity map
+        [3]  Target intensity map
+        [4]  Color image source
+        [5]  Color image target
+        [6]  Point Cloud Filename
+        [7:] Transforms 
+        """
+
+        """
+        """
+        # Define preprocessing Pipeline
+        imgTensorPreProc = transforms.Compose([
+        transforms.Resize(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+
+        lineString = str(self.data[key]).split(' ')
+
+        # Read from the file
+        srcDepthImageFileName = lineString[0]
+        targetDepthImageFileName = lineString[1] 
+        srcIntensityImageFileName = lineString[2]
+        targetIntensityImageFileName = lineString[3] 
+        srcColorImageFileName = lineString[4]
+        targetColorImageFileName = lineString[5]
+        pointCldFileName = lineString[6]
+        transform = np.array(lineString[7:]).astype(float).reshape(4,4)
+
+        __, __, srcDepthImg = readimgfromfilePIL(srcDepthImageFileName)
+        srcDepthImg = normalizePILGrayImg(srcDepthImg) # Bring it to the range of [0,1]
+        srcDepthImg = imgTensorPreProc(srcDepthImg)
+
+        __, __, targetDepthImg = readimgfromfilePIL(targetDepthImageFileName)
+        targetDepthImg = normalizePILGrayImg(targetDepthImg) # Bring it to the range of [0,1]
+        targetDepthImg = imgTensorPreProc(targetDepthImg)
+
+        __, __, srcIntensityImg = readimgfromfilePIL(targetDepthImageFileName)
+        srcIntensityImg = normalizePILGrayImg(srcIntensityImg) # Bring it to the range of [0,1]
+        srcIntensityImg = imgTensorPreProc(srcIntensityImg)
+
+        __, __, targetIntensityImg = readimgfromfilePIL(targetIntensityImageFileName)
+        targetIntensityImg = normalizePILGrayImg(targetIntensityImg) # Bring it to the range of [0,1]
+        targetIntensityImg = imgTensorPreProc(targetIntensityImg)
+
+        __, __, srcClrImg = readimgfromfilePIL(srcColorImageFileName)
+        srcClrImg = normalizePILImg(srcClrImg) # Bring it to the range of [0,1]
+        srcClrImg = imgTensorPreProc(srcClrImg)
+
+        # read the point cloud 
+        ptCld, intensityValues = readvelodynepointcloud(pointCldFileName)
+        intensityValues = intensityValues.reshape(intensityValues.shape[0],1)
+        
+        if ptCld.shape[0] < self.maxPtCldSize :
+            # Pad the point cloud with 0
+            paddingValuesPtCld = np.empty((self.maxPtCldSize - ptCld.shape[0], ptCld.shape[1]))
+            ptCld = np.vstack((ptCld,paddingValuesPtCld))
+
+            # Padding values for intensity 
+            paddingValuesIntesnity = np.empty((self.maxPtCldSize - intensityValues.shape[0], 1))
+            intensityValues = np.vstack((intensityValues,paddingValuesIntesnity))
+        
+        # Combine the point Cloud with intensity data
+        ptCld = np.hstack((ptCld,intensityValues))
+
+
+        return (srcDepthImg, targetDepthImg, srcIntensityImg, targetIntensityImg, srcClrImg, ptCld, transform)
+
 
 if __name__ == "__main__":
     obj = dataLoader('/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/processed/train/trainingdata.json')

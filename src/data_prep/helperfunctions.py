@@ -64,7 +64,7 @@ def processRunDir(runDir, procDataDir, P_rect, R_rect, R, T):
             sizePtCld = ptcloud.shape[0]
 
             # Project points over imageplane
-            imgPts, rectPtCld, tfRand = projectptstoimgplane(ptcloud, intensityData, P_rect, R_rect, R, T)
+            imgPts, rectPtCld, tfRand = projectptstoimgplane(ptcloud, intensityData, P_rect, R_rect, R, T, True)
 
             # Filter the points
             [imgW, imgH, img] = readimgfromfile(imgFileName)
