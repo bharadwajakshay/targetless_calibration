@@ -3,11 +3,24 @@ import json
 import numpy as np
 from torch.utils.data import Dataset
 from scipy.spatial.transform import Rotation as rot
-from PIL import Image
+from PIL import Image, ImageOps
 import cv2
 import math
+import open3d as o3d
 
 from torchvision import transforms
+
+
+def getNormals(ptCld):
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(ptCld)
+    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+    o3d.visualization.draw_geometries([pcd])
+    normals = np.asarray(pcd.normals)
+    print('BreakPoint')
+    return(normals)
+
+
 
 
 def normalizePtCld(pointcloud):
@@ -82,9 +95,11 @@ class dataLoader(Dataset):
         self.data = self.data[:-1]
         """
         if mode =='train':
-            self.data = self.data[:28000]
+            self.data = self.data[:5000]
         if mode =='test':
-            self.data = self.data[28000:]
+            self.data = self.data[29500:]
+        if mode =='evaluate':
+            self.data = self.data[25000:26000]
 
     def __len__(self):
         return(len(self.data))
@@ -92,57 +107,6 @@ class dataLoader(Dataset):
     def __getitem__(self, key):
         return(self.getItem(key))
 
-    """
-    def getItem(self, key):
-        # read the point cloud 
-        ptCldFileName = self.data[key]["pointCldFileName"]
-        ptCld, intensityValues = readvelodynepointcloud(ptCldFileName)
-        intensityValues = intensityValues.reshape(intensityValues.shape[0],1)
-        
-        if ptCld.shape[0] < self.maxPtCldSize :
-            # Pad the point cloud with 0
-            paddingValuesPtCld = np.zeros((self.maxPtCldSize - ptCld.shape[0], ptCld.shape[1]))
-            ptCld = np.vstack((ptCld,paddingValuesPtCld))
-
-            # Padding values for intensity 
-            paddingValuesIntesnity = np.zeros((self.maxPtCldSize - intensityValues.shape[0], 1))
-            intensityValues = np.vstack((intensityValues,paddingValuesIntesnity))
-        
-        # Combine the point Cloud with intensity data
-        ptCld = np.hstack((ptCld,intensityValues))
-        
-        # Read the color image
-        colorImgFileName = self.data[key]["colorImgFileName"]
-        colorImgW, colorImgH, colorImg = readimgfromfile(colorImgFileName)
-        colorImg = resizeImgForResNet(colorImg)
-
-        # Convert the image to grayscale
-        grayImg = cv2.cvtColor(colorImg,cv2.COLOR_BGR2GRAY)
-
-        # normalize the image
-        colorImg = normalizeImg(colorImg)
-
-
-        # Read the depth image
-        depthImgFileName = self.data[key]["depthImgFileName"]
-        depthImgW, depthImgH, depthImg = readimgfromfile(depthImgFileName)
-        #normalize the image
-        depthImg = normalizeImg(depthImg)
-
-        # Read the intensity image
-        intesnityImgFileName = self.data[key]["intensityImgFileName"]
-        intesnityImgW, intesnityImgH, intesnityImg = readimgfromfile(intesnityImgFileName)
-        # normalize  the image
-        intesnityImg = normalizeImg(intesnityImg)
-
-
-        # Read the transform 
-        transform = self.data[key]["transform2Estimate"]
-        transform = np.asarray(transform)
-        transform = np.reshape(transform,(4,4))
-
-        return(ptCld, colorImg, grayImg, depthImg, intesnityImg, transform)
-    """
     def getItem(self, key):
         """
         [0]  Source depth map
@@ -159,7 +123,7 @@ class dataLoader(Dataset):
         """
         # Define preprocessing Pipeline
         imgTensorPreProc = transforms.Compose([
-        transforms.Resize(224),
+        #transforms.Resize(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
@@ -178,43 +142,43 @@ class dataLoader(Dataset):
         transform = np.array(lineString[7:]).astype(float).reshape(4,4)
 
         __, __, srcDepthImg = readimgfromfilePIL(srcDepthImageFileName)
-        srcDepthImg = normalizePILGrayImg(srcDepthImg) # Bring it to the range of [0,1]
+        #srcDepthImg = normalizePILGrayImg(srcDepthImg) # Bring it to the range of [0,1]
         srcDepthImg = imgTensorPreProc(srcDepthImg)
 
-        __, __, targetDepthImg = readimgfromfilePIL(targetDepthImageFileName)
-        targetDepthImg = normalizePILGrayImg(targetDepthImg) # Bring it to the range of [0,1]
-        targetDepthImg = imgTensorPreProc(targetDepthImg)
-
         __, __, srcIntensityImg = readimgfromfilePIL(targetDepthImageFileName)
-        srcIntensityImg = normalizePILGrayImg(srcIntensityImg) # Bring it to the range of [0,1]
+        #srcIntensityImg = normalizePILGrayImg(srcIntensityImg) # Bring it to the range of [0,1]
         srcIntensityImg = imgTensorPreProc(srcIntensityImg)
 
-        __, __, targetIntensityImg = readimgfromfilePIL(targetIntensityImageFileName)
-        targetIntensityImg = normalizePILGrayImg(targetIntensityImg) # Bring it to the range of [0,1]
-        targetIntensityImg = imgTensorPreProc(targetIntensityImg)
 
         __, __, srcClrImg = readimgfromfilePIL(srcColorImageFileName)
-        srcClrImg = normalizePILImg(srcClrImg) # Bring it to the range of [0,1]
+        colorImage = np.array(srcClrImg)
+        #srcClrImg = normalizePILImg(srcClrImg) # Bring it to the range of [0,1]
         srcClrImg = imgTensorPreProc(srcClrImg)
 
         # read the point cloud 
         ptCld, intensityValues = readvelodynepointcloud(pointCldFileName)
         intensityValues = intensityValues.reshape(intensityValues.shape[0],1)
+        ptcldSize = ptCld.shape[0]
         
         if ptCld.shape[0] < self.maxPtCldSize :
             # Pad the point cloud with 0
-            paddingValuesPtCld = np.empty((self.maxPtCldSize - ptCld.shape[0], ptCld.shape[1]))
+            paddingValuesPtCld = np.zeros((self.maxPtCldSize - ptCld.shape[0], ptCld.shape[1]))
             ptCld = np.vstack((ptCld,paddingValuesPtCld))
 
             # Padding values for intensity 
-            paddingValuesIntesnity = np.empty((self.maxPtCldSize - intensityValues.shape[0], 1))
+            paddingValuesIntesnity = np.zeros((self.maxPtCldSize - intensityValues.shape[0], 1))
             intensityValues = np.vstack((intensityValues,paddingValuesIntesnity))
         
         # Combine the point Cloud with intensity data
         ptCld = np.hstack((ptCld,intensityValues))
 
+        #normals = getNormals(ptCld[:,:3])
 
-        return (srcDepthImg, targetDepthImg, srcIntensityImg, targetIntensityImg, srcClrImg, ptCld, transform)
+        # Combine Depth information with intensity information on another channel
+        srcDepthImg[2,:,:] = srcIntensityImg[0,:,:]
+
+
+        return (srcClrImg, srcDepthImg, ptCld, ptcldSize, transform,[colorImage])
 
 
 if __name__ == "__main__":
