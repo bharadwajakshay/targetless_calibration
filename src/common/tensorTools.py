@@ -1,3 +1,4 @@
+from numpy.lib.type_check import imag
 import torch
 from common.pytorch3D import *
 import numpy as np
@@ -10,7 +11,7 @@ def moveToDevice(tensor, device):
         return(tensor.to('cpu'))
 
     if tensor.get_device() != device:
-        tensor = tensor.to('cuda:'+str(device))
+        tensor = tensor.to('cuda')
     
     return(tensor)
 
@@ -41,53 +42,7 @@ def createRTMatTensor(R, T):
     # The input Tensor is composed of two components R, T
     # T = inputTensor[0]
     # R = inputTensor[1]
-    """
-    # Consider R[0] = Alpha
-    #          R[1] = Beta
-    #          R[2] = Gamma
 
-    cosAlpha = torch.cos(R[:,:,0])
-    sinAlpha = torch.sin(R[:,:,0])
-    cosBeta = torch.cos(R[:,:,1])
-    sinBeta = torch.sin(R[:,:,1])
-    cosGamma = torch.cos(R[:,:,2])
-    sinGamma = torch.sin(R[:,:,2])
-
-    zeroTensor = torch.zeros(cosAlpha.shape)
-    oneTensor  = torch.ones(cosAlpha.shape)
-
-    #   |  cosG  sinG  0 |
-    #   | -sinG  cosG  0 |
-    #   |   0     0    1 |
-
-    rZ0 = torch.unsqueeze(torch.hstack([cosGamma[:,], sinGamma[:,], zeroTensor[:,]]),dim=1)
-    rZ1 = torch.unsqueeze(torch.hstack([torch.neg(sinGamma[:,]), cosGamma[:,], zeroTensor[:,]]),dim=1)
-    rZ2 = torch.unsqueeze(torch.hstack([zeroTensor[:,], zeroTensor[:,], oneTensor[:,]]),dim=1)
-    rZ = torch.cat((rZ0,rZ1,rZ2),dim=1)
-
-    #   |  cosB   0  -sinB |
-    #   |   0     1    0   |
-    #   |  sinB   0   cosB |
-
-    rY0 = torch.unsqueeze(torch.hstack([cosBeta[:,], zeroTensor[:,], torch.neg(sinBeta[:,]) ]),dim=1)
-    rY1 = torch.unsqueeze(torch.hstack([zeroTensor[:,], oneTensor[:,], zeroTensor[:,]]),dim=1)
-    rY2 = torch.unsqueeze(torch.hstack([sinBeta[:,], zeroTensor[:,], cosBeta[:,]]),dim=1)
-    rY  = torch.cat((rY0, rY1, rY2),dim=1) 
-
-
-    #   |  1    0     0   |
-    #   |  0   cosA  sinA |
-    #   |  0  -sinA  cosA |
-
-    rX0 = torch.unsqueeze(torch.hstack([oneTensor[:,], zeroTensor[:,], zeroTensor[:,]]),dim=1)
-    rX1 = torch.unsqueeze(torch.hstack([zeroTensor[:,], cosAlpha[:,], sinAlpha[:,]]),dim=1)
-    rX2 = torch.unsqueeze(torch.hstack([zeroTensor[:,], torch.neg(sinAlpha[:,]), cosAlpha[:,]]),dim=1)
-    rX = torch.cat((rX0, rX1, rX2),dim=1)
-
-    # Multiply  ZXY to get Rotation Matrix 
-    rXY = torch.matmul(rX, rY)
-    rZXY = torch.matmul(rZ, rXY)
-    """
     rZXY = euler_angles_to_matrix(R, "ZXY")
     rZXY = torch.squeeze(rZXY,dim = 1)
 
@@ -99,6 +54,21 @@ def createRTMatTensor(R, T):
     ones = torch.ones((RT.shape[0],1))
     zeros[:,:,3] = ones[:] 
 
+
+    # Move the vector zeros to device in which RT is present
+    RT = torch.cat((RT,zeros.to('cuda:'+str(RT.get_device()))),dim=1)
+
+    return(RT)
+
+def convSO3NTToSE3(RMat, Trans):
+
+    Trans = torch.transpose(Trans,2,1)
+    RT = torch.cat((RMat, Trans),dim=2)
+
+    # Zeros vector 
+    zeros = torch.zeros((RT.shape[0],1, RT.shape[2])) 
+    ones = torch.ones((RT.shape[0],1))
+    zeros[:,:,3] = ones[:] 
 
     # Move the vector zeros to device in which RT is present
     RT = torch.cat((RT,zeros.to('cuda:'+str(RT.get_device()))),dim=1)
@@ -127,6 +97,32 @@ def calculateInvRTTensor(RT):
     invRT = torch.cat((invRT,zeros.to('cuda:'+str(invRT.get_device()))),dim=1)
 
     return(invRT)
+
+def calculateInvRTTensor(R, T):
+
+    # Extract the rotation matrix from 4x4 matrix 
+    #R = RT[:,:3,:3]
+
+    # Extract the translation matrix from 4x4 matrix
+    #T = RT[:,:3,3]
+    
+    T = torch.unsqueeze(T,dim=2)
+
+    # Calculate the inverse of the matrix 
+    invR = torch.inverse(R)
+    invT = torch.negative(torch.matmul(invR,T))
+    invRT = torch.cat((invR,invT),dim=2)
+
+    zeros = torch.zeros((R.shape[0],1, 4)) 
+    ones = torch.ones((R.shape[0],1))
+    zeros[:,:,3] = ones[:]
+
+    invRT = torch.cat((invRT,zeros.to('cuda:'+str(invRT.get_device()))),dim=1)
+
+    #print(invRT)
+
+    return(invRT)
+
 
 def getImageTensorFrmPtCloud(projectionMat, ptCld):
 
@@ -293,19 +289,35 @@ def calculateEucledianDistTensor(tensor1, tensor2):
 
     return(euclideanDistance)
 
-def calculateEucledianDistOfPointClouds(PtCld0, PtCld1):
+def calculateEucledianDistOfPointClouds(PtCld0, PtCld1, ptCldSize):
 
     # Claculate the mean euclidean distance between each point point cloud
     meanEucledianDist = torch.empty(PtCld0.shape[0],1)
     for channel in range(0,PtCld0.shape[0]):
-        D = torch.sqrt(torch.pow(PtCld1[channel,:,0] - PtCld0[channel,:,0],2) 
-            + torch.pow(PtCld1[channel,:,1] - PtCld0[channel,:,1],2) 
-            + torch.pow(PtCld1[channel,:,2] - PtCld0[channel,:,2],2))
+
+        D = torch.sqrt(torch.pow(PtCld1[channel,:ptCldSize[channel],0] - PtCld0[channel,:ptCldSize[channel],0],2) 
+            + torch.pow(PtCld1[channel,:ptCldSize[channel],1] - PtCld0[channel,:ptCldSize[channel],1],2) 
+            + torch.pow(PtCld1[channel,:ptCldSize[channel],2] - PtCld0[channel,:ptCldSize[channel],2],2))
 
         meanEucledianDist[channel,:] = torch.max(D)
    
 
     return(meanEucledianDist)
+
+def calculateManhattanDistOfPointClouds(PtCld0, PtCld1, ptCldSize):
+
+    # Claculate the mean euclidean distance between each point point cloud
+    meanManhattanDist = torch.empty(PtCld0.shape[0],1)
+    for channel in range(0,PtCld0.shape[0]):
+
+        D = torch.abs(PtCld1[channel,:ptCldSize[channel],0] - PtCld0[channel,:ptCldSize[channel],0]) \
+            + torch.abs(PtCld1[channel,:ptCldSize[channel],1] - PtCld0[channel,:ptCldSize[channel],1]) \
+            + torch.abs(PtCld1[channel,:ptCldSize[channel],2] - PtCld0[channel,:ptCldSize[channel],2])
+
+        meanManhattanDist[channel,:] = torch.max(D)
+   
+
+    return(meanManhattanDist)
 
 
 def findCalibParameterTensor(rootDir):
@@ -320,7 +332,7 @@ def findCalibParameterTensor(rootDir):
     return([P_rect, R_rect, RT])
 
 def convertToHomogenousCoordTensor(ptCld):
-    ones = torch.ones((ptCld.shape[0],ptCld.shape[1],1)).to('cuda:'+str(ptCld.get_device()))
+    ones = moveToDevice(torch.ones((ptCld.shape[0],ptCld.shape[1],1)), ptCld.get_device())
     ptCld = torch.cat([ptCld,ones],dim=2)
 
     return(ptCld)
@@ -354,12 +366,14 @@ def getGroundTruthPointCloud(ptCloud, P_rect, R_rect, RT):
     return(ptCloud)
     
 
-def saveModelParams(model, optimizer, epoch, path):
+def saveModelParams(resentModel, model, optimizerResNet, optimizerRegression, epoch, path):
 
     print("saving the model")
     state = {'epoch': epoch,
+            'resNetModelStateDict': resentModel.state_dict(),
             'modelStateDict':model.state_dict(),
-            'optimizerStateDict': optimizer.state_dict(),}
+            'optimizerResNetStateDict': optimizerResNet.state_dict(),
+            'optimizerRegressorStateDict':optimizerRegression.state_dict()}
     torch.save(state, path)
 
 def sanityCheckDepthMaps(grayImg, depthImg):
@@ -427,3 +441,60 @@ def exponentialMap(pred):
     T = torch.cat([T,zeros],1)
 
     return T
+
+
+def overlayPtsOnImg(img,pts2D, pts3D):
+
+    imgCopy = img
+    pts2DCopy = torch.clone(pts2D)
+    pts3DCopy = torch.clone(pts3D)
+
+    # Move to np
+    pts2DCopy = pts2DCopy.to('cpu').numpy()
+    pts3DCopy = pts3DCopy.to('cpu').numpy()
+
+    resultImg = np.empty_like(imgCopy)
+
+    for batch in range(0,imgCopy.shape[0]):
+        
+        npImg = cv2.cvtColor(imgCopy[batch], cv2.COLOR_RGB2HSV)
+        npPts = pts2DCopy[batch]
+
+        for i in range(npPts.shape[0]):
+            cv2.circle(npImg, (np.int32(npPts[i][0]),np.int32(npPts[i][1])),1, (int((((pts3DCopy[batch,i,2] - 0) / (70 - 0)) * 120).astype(np.uint8) ),255,255),-1)
+            
+        '''
+        cv2.imshow('Image',cv2.cvtColor(npImg, cv2.COLOR_HSV2RGB))
+        cv2.waitKey(0)
+        '''
+        resultImg[batch] = cv2.cvtColor(npImg, cv2.COLOR_HSV2RGB)
+
+    return resultImg
+
+
+    
+def overlayPtCldOnImg(img,ptCld,rT,P,rectR=np.eye(4)):
+
+    # Cforrect for the RT
+    ptCld = getGroundTruthPointCloud(ptCld,P,rectR,rT)
+
+    ptCldImgCoord = torch.transpose(getImageTensorFrmPtCloud(P, torch.transpose(ptCld,1,2)),2,1)
+
+    predImgCoord, ptCldFilt = filterPtClds(ptCldImgCoord, ptCld, img.shape[1], img.shape[2])
+
+    img = overlayPtsOnImg(img, predImgCoord, ptCldFilt)
+    
+    return(img)
+
+def convertImageTensorToCV(imageT):
+    imgs = imageT.to('cpu').numpy()
+
+    # Verification
+    for batchNo in range(0,imgs.shape[0]):
+        imgs[batchNo] = cv2.cvtColor(imgs[batchNo],cv2.COLOR_RGB2BGR)
+        '''
+        cv2.imshow("Converted Image",imgs[batchNo,:,:,:])
+        cv2.waitKey(0)
+        '''
+    return(imgs)
+
