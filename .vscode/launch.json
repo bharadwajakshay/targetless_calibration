@@ -21,7 +21,7 @@
             "program": "${workspaceFolder}/src/data_prep/decalibration.py",
             "console": "integratedTerminal",
             "args": [
-                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/"
+                "/home/akshay/5TB-HDD/Datasets/kitti/"
             ]
         },
         {
@@ -38,7 +38,7 @@
             "program": "${workspaceFolder}/src/data_prep/datasetBuilderColor2.py",
             "console": "integratedTerminal",
             "args": [
-                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw_test/2011_09_26/2011_09_26_drive_0001"
+                "/home/akshay/5TB-HDD/Datasets/kitti/raw_test/2011_09_26/2011_09_26_drive_0001"
             ]
         },
         {
@@ -48,7 +48,7 @@
             "program": "${workspaceFolder}/src/data_prep/datasetBuilderColor.py",
             "console": "integratedTerminal",
             "args": [
-                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw_test/2011_09_26/2011_09_26_drive_0001"
+                "/home/akshay/5TB-HDD/Datasets/kitti/raw_test/2011_09_26/2011_09_26_drive_0001"
             ]
         },
         {
@@ -58,7 +58,7 @@
             "program": "${workspaceFolder}/src/data_prep/createDataset.py",
             "console": "integratedTerminal",
             "args": [
-                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/2011_09_26"
+                "/home/akshay/5TB-HDD/Datasets/kitti/raw/2011_09_26"
             ]
         },
         {
@@ -68,8 +68,15 @@
             "program": "${workspaceFolder}/src/data_prep/parseGeneratedData.py",
             "console": "integratedTerminal",
             "args": [
-                "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/"
+                "/home/akshay/5TB-HDD/Datasets/kitti/"
             ]
+        },
+        {
+            "name": "Python: Evaluate neural net",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/evaluate.py",
+            "console": "integratedTerminal"
         },
     ]
 }
