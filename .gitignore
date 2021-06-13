@@ -155,3 +155,5 @@ data/*
 # Pretrained model
 *.pth
 
+# Text file 
+*.txt
