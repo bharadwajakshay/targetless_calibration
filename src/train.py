@@ -81,9 +81,9 @@ def test(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader):
         # Caluclate the euler angles from rotation matrix
         predEulerAngles = matrix_to_euler_angles(predRot, "ZXY")
         targetEulerAngles = matrix_to_euler_angles(gtRot, "ZXY")
-        errorEulerAngle = torch.pow(targetEulerAngles - predEulerAngles,2)
+        errorEulerAngle = torch.abs(targetEulerAngles - predEulerAngles)
         errorEulerAngle = torch.rad2deg(torch.mean(errorEulerAngle,dim=0))
-        errorTranslation = torch.pow(gtT - predT,2)
+        errorTranslation = torch.abs(gtT - predT)
         errorTranslation = torch.mean(errorTranslation,dim=0)
 
         """
@@ -126,8 +126,8 @@ def main():
     torch.cuda.empty_cache()
 
     # Choose the RESNet network used to get features from the images 
-    resnetClrImg = resnet18(pretrained=True).to('cuda')
-    resnetDepthImg = resnet18(pretrained=False).to('cuda')
+    resnetClrImg = resnet50(pretrained=True).to('cuda')
+    resnetDepthImg = resnet50(pretrained=False).to('cuda')
     regressor_model = regressor.regressor().to('cuda')
     loss_function = get_loss().to('cuda')
 
@@ -205,7 +205,7 @@ def main():
 
         
             # Expand the data into its respective components
-            srcClrT, srcDepthT, ptCldT, ptCldSize, targetTransformT = data
+            srcClrT, srcDepthT, ptCldT, ptCldSize, targetTransformT, options = data
             
             optimizerResNET.zero_grad()
             optimizerRegression.zero_grad()
