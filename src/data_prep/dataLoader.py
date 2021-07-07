@@ -95,7 +95,7 @@ class dataLoader(Dataset):
         self.data = self.data[:-1]
         """
         if mode =='train':
-            self.data = self.data[:5000]
+            self.data = self.data[:10000]
         if mode =='test':
             self.data = self.data[29500:]
         if mode =='evaluate':
