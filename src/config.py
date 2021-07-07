@@ -4,16 +4,16 @@ image = dict(height = 375,
              width = 1242,
              channel = 3) 
 
-trainingDataFile = "/home/akshay/programming/pytorchvenv/targetless_calibration/parsed_set.txt"
-maxPtCldSizeFile = "/home/akshay/programming/pytorchvenv/targetless_calibration/maxPtCldSize.txt"
-camToCamCalibFile = "/home/akshay/5TB-HDD/Datasets/kitti/raw/2011_09_26/calib_cam_to_cam.txt"
-camToVeloCalibFile = "/home/akshay/5TB-HDD/Datasets/kitti/raw/2011_09_26/calib_velo_to_cam.txt"
+trainingDataFile = "/home/akshay/pytorchEnv/targetless_calibration/parsed_set.txt"
+maxPtCldSizeFile = "/home/akshay/pytorchEnv/targetless_calibration/maxPtCldSize.txt"
+camToCamCalibFile = "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/2011_09_26/calib_cam_to_cam.txt"
+camToVeloCalibFile = "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/2011_09_26/calib_velo_to_cam.txt"
 
-pathToPretrainedModel = "/home/akshay/programming/pytorchvenv/targetless_calibration/src/model/trained/bestTargetCalibrationModel.pth"
+pathToPretrainedModel = "/home/akshay/pytorchEnv/targetless_calibration/src/model/trained/bestTargetCalibrationModel.pth"
 
-logsDirs = "/home/akshay/programming/pytorchvenv/targetless_calibration/testing/logs"
+logsDirs = "/home/akshay/pytorchEnv/targetless_calibration/testing/logs"
 
-calibrationDir = "/home/akshay/5TB-HDD/Datasets/kitti/raw/2011_09_26/"
+calibrationDir = "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/2011_09_26/"
 
 training = dict(
     batchSize = 5,
