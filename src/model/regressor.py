@@ -8,7 +8,7 @@ class featureMatchingNW(nn.Module):
 
         # The input to the feature matching network will be [batch size, 1, 4096]
         # Setting the kernel size to 3
-        channels = 1024
+        channels = 4096
         kernelSize = 3
         padding = (1,1)
         stride = (1,1)
@@ -63,13 +63,17 @@ class regressionTransNw(nn.Module):
         self.conv1x1B0 = nn.Conv2d(channels, channels, kernelSize, padding=padding, stride=stride)
         nn.init.xavier_uniform_(self.conv1x1B0.weight)
 
+        self.conv1x1B1 = nn.Conv2d(channels, 128, kernelSize, padding=padding, stride=stride)
+        nn.init.xavier_uniform_(self.conv1x1B0.weight)
+
         # BatchNormalization
         self.bn = nn.BatchNorm2d(256)
+        self.bn1 = nn.BatchNorm2d(128)
 
         self.Relu = nn.ReLU(inplace=True)
 
         # Linear FC network Layers
-        self.FC0 = nn.Linear(61440,3)
+        self.FC0 = nn.Linear(15360,3)
         nn.init.xavier_uniform_(self.FC0.weight)
 
         # Dropout layer
@@ -80,6 +84,9 @@ class regressionTransNw(nn.Module):
 
         x = self.conv1x1B0(x)
         x = self.bn(x)
+        x = self.Relu(x)
+        x = self.conv1x1B1(x)
+        x = self.bn1(x)
         x = self.Relu(x)
 
         x = torch.flatten(x,start_dim=1)
