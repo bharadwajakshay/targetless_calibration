@@ -89,13 +89,28 @@ def evaluate(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader, 
         predEulerAngles = matrix_to_euler_angles(predRot, "ZXY")
         targetEulerAngles = matrix_to_euler_angles(gtRot, "ZXY")
 
-        errorEulerAngle = torch.pow(targetEulerAngles - predEulerAngles,2)
-        errorEulerAngle = torch.rad2deg(torch.mean(errorEulerAngle,dim=0))
-        errorEulerAngleVec[j,:] = np.sqrt(errorEulerAngle.to('cpu').numpy())
+        #'''
+        errorEulerAngle = torch.square(targetEulerAngles - predEulerAngles)
+        errorEulerAngle = torch.rad2deg(torch.sqrt(torch.mean(errorEulerAngle,dim=0)))
+        errorEulerAngleVec[j,:] = errorEulerAngle.to('cpu').numpy()
         
-        errorTranslation = torch.pow(gtT - predT,2)
+        errorTranslation = torch.square(gtT - predT)
+        errorTranslation = torch.sqrt(torch.mean(errorTranslation,dim=0))
+        errorTranslationVec[j,:] = errorTranslation.to('cpu').numpy()
+        #'''
+
+        '''
+        errorEulerAngle = torch.abs(targetEulerAngles - predEulerAngles)
+        errorEulerAngle = torch.rad2deg(torch.mean(errorEulerAngle,dim=0))
+        errorEulerAngleVec[j,:] = errorEulerAngle.to('cpu').numpy()
+        
+        errorTranslation = torch.abs(gtT - predT)
         errorTranslation = torch.mean(errorTranslation,dim=0)
-        errorTranslationVec[j,:] = np.sqrt(errorTranslation.to('cpu').numpy())
+        errorTranslationVec[j,:] = errorTranslation.to('cpu').numpy()
+        '''
+        
+        
+        '''
 
 
         # Visualization Testing
@@ -125,7 +140,7 @@ def evaluate(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader, 
         for batch in range(0,image.shape[0]):
             cv2.imwrite('testing/images/Evaluation/InvPredTransform'+str(j)+'_'+str(batch)+'.png', imageInvPredTransform[batch])
 
-
+        '''
 
         
     return(np.mean(simpleDistanceSE3), errorEulerAngleVec, errorTranslationVec)
@@ -161,8 +176,8 @@ def main():
     torch.cuda.empty_cache()
 
     # Choose the RESNet network used to get features from the images 
-    resnetClrImg = resnet18(pretrained=True).to('cuda')
-    resnetDepthImg = resnet18(pretrained=False).to('cuda')
+    resnetClrImg = resnet50(pretrained=True).to('cuda')
+    resnetDepthImg = resnet50(pretrained=False).to('cuda')
     regressor_model = regressor.regressor().to('cuda')
 
     # define max pooling layer
