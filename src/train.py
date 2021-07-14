@@ -62,6 +62,7 @@ def test(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader):
 
         # Cuda 0
         predTransform  = regressorModel(aggClrDepthFeatureMap)
+        
 
         # Simple SE3 distance
         predRot = quaternion_to_matrix(predTransform[:,:4])
@@ -219,37 +220,67 @@ def main():
             # Color Image - Cuda 0
             srcClrT = srcClrT.to('cuda')
             featureMapClrImg = resnetClrImg(srcClrT)
-            # Move it back to cpu
-            #srcClrT = srcClrT.to('cpu')
-            #resnetClrImg = resnetClrImg.to('cpu')
-            #featureMapClrImg = featureMapClrImg.to('cpu')
 
             # Depth Image - Cuda 0
             srcDepthT = srcDepthT.to('cuda')
             maxPool = maxPool.to('cuda')
-            maxPooledDepthImg = maxPool(srcDepthT)
-            featureMapDepthImg = resnetDepthImg(maxPooledDepthImg)
-            # Move it back to cpu
-            #srcDepthT = srcDepthT.to('cpu')
-            #maxPool = maxPool.to('cpu')
-            #resnetDepthImg = resnetDepthImg.to('cpu')
-            #featureMapDepthImg = featureMapDepthImg.to('cpu')
+                  
 
+            '''
+            ###################################################################################################################################
+            # Loop 1: ResNet-50 and Regressionl Network (Angular Regression)
+            #
+            ###################################################################################################################################
+            '''
+            
+            maxPooledDepthImg = maxPool(srcDepthT)
+
+            # Set Grad required for the ResNet depth n/w
+            resnetDepthImg.requires_grad_(True)
+
+            # Set network matching and regressor nw
+            regressor_model.featurematching.requires_grad_(True)
+            regressor_model.regressionRot.requires_grad_(True)
+            regressor_model.regressionTrans.requires_grad_(False)
+
+            featureMapDepthImg = resnetDepthImg(maxPooledDepthImg)
 
             # Concatinate the feature Maps # Still in Cuda 0
             aggClrDepthFeatureMap = torch.cat([featureMapDepthImg,featureMapClrImg],dim=1)
 
+            
             # Move the regressor model to Cuda 0 and pass the concatinated Feature Vector
             predTransform  = regressor_model(aggClrDepthFeatureMap,True)
-            # Move the regressor back to CPU
-            #regressor_model = regressor_model.to('cpu')
 
             # Move the loss Function to Cuda 0          
-            loss, manhattanDist = loss_function(predTransform, srcClrT, srcDepthT, ptCldT, ptCldSize, targetTransformT, config.calibrationDir, 1)
-            # Move the model back to CPU
-            #loss_function = loss_function.to('cpu')
+            loss, manhattanDist, rotationCorrectedDepthMap = loss_function(predTransform, srcClrT, srcDepthT, ptCldT, ptCldSize, targetTransformT, config.calibrationDir, 1)
 
-                  
+            loss.backward(retain_graph=True)
+
+            '''
+            ###################################################################################################################################
+            # Loop 2: Regressionl Network (Translational Regression)
+            #
+            ###################################################################################################################################
+            '''
+
+            # Set Grad required for the ResNet depth n/w
+            resnetDepthImg.requires_grad_(False)
+            
+            # Set network matching and regressor nw
+            regressor_model.featurematching.requires_grad_(False)
+            regressor_model.regressionRot.requires_grad_(False)
+            regressor_model.regressionTrans.requires_grad_(True)
+
+            maxPooledDepthImg = maxPool(rotationCorrectedDepthMap.to('cuda'))
+            featureMapDepthImg = resnetDepthImg(maxPooledDepthImg)
+            aggClrDepthFeatureMap = torch.cat([featureMapDepthImg,featureMapClrImg],dim=1)
+
+            # Move the regressor model to Cuda 0 and pass the concatinated Feature Vector
+            predTransform  = regressor_model(aggClrDepthFeatureMap,True)
+
+            # Move the loss Function to Cuda 0          
+            loss = loss_function(predTransform, srcClrT, srcDepthT, ptCldT, ptCldSize, targetTransformT, config.calibrationDir, 1, 'translation')
             loss.backward()
 
             manhattanDistArray = np.append(manhattanDistArray,manhattanDist.to('cpu').detach().numpy()) 

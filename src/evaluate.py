@@ -89,7 +89,7 @@ def evaluate(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader, 
         predEulerAngles = matrix_to_euler_angles(predRot, "ZXY")
         targetEulerAngles = matrix_to_euler_angles(gtRot, "ZXY")
 
-        #'''
+        
         errorEulerAngle = torch.square(targetEulerAngles - predEulerAngles)
         errorEulerAngle = torch.rad2deg(torch.sqrt(torch.mean(errorEulerAngle,dim=0)))
         errorEulerAngleVec[j,:] = errorEulerAngle.to('cpu').numpy()
@@ -97,7 +97,7 @@ def evaluate(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader, 
         errorTranslation = torch.square(gtT - predT)
         errorTranslation = torch.sqrt(torch.mean(errorTranslation,dim=0))
         errorTranslationVec[j,:] = errorTranslation.to('cpu').numpy()
-        #'''
+        
 
         '''
         errorEulerAngle = torch.abs(targetEulerAngles - predEulerAngles)
@@ -110,9 +110,9 @@ def evaluate(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader, 
         '''
         
         
+        
+        
         '''
-
-
         # Visualization Testing
         # Conert the image tensor to image 
         clrImage = convertImageTensorToCV(optional[0])
@@ -139,7 +139,6 @@ def evaluate(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader, 
 
         for batch in range(0,image.shape[0]):
             cv2.imwrite('testing/images/Evaluation/InvPredTransform'+str(j)+'_'+str(batch)+'.png', imageInvPredTransform[batch])
-
         '''
 
         

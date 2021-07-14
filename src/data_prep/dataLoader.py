@@ -95,11 +95,11 @@ class dataLoader(Dataset):
         self.data = self.data[:-1]
         """
         if mode =='train':
-            self.data = self.data[:10000]
+            self.data = self.data[:15000]
         if mode =='test':
-            self.data = self.data[29500:]
+            self.data = self.data[27000:]
         if mode =='evaluate':
-            self.data = self.data[25000:26000]
+            self.data = self.data[25000:27000]
 
     def __len__(self):
         return(len(self.data))

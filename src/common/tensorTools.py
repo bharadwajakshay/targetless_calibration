@@ -233,8 +233,10 @@ def createImage(ptCld2D,addChannel, imgWidth, imgHeight):
     for batchId in range(newImg.shape[0]):
         newImg[batchId, ptCld2D[batchId,:,1], ptCld2D[batchId,:,0]] = 255 - addChannel[batchId,:]
 
+    # Do sanity check
+
     # Normalizing the depth maps
-    newImg = torch.div(newImg,255)
+    #newImg = torch.div(newImg,255)
     return(newImg)
 
 
@@ -384,8 +386,8 @@ def sanityCheckDepthMaps(grayImg, depthImg):
 
 
     for channel in range(0,batchsize):
-        grayimage = grayImg[channel,:,:].numpy()
-        depthimage = depthImg[channel,:,:].numpy()
+        grayimage = grayImg[channel,:,:].detach().numpy()
+        depthimage = depthImg[channel,:,:].detach().numpy()
 
         #save images
         cv2.imwrite("testing/grayscaleimg-"+str(channel)+'.png',grayimage)

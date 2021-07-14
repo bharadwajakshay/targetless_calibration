@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from scipy.spatial.transform import Rotation as rot
 import numpy as np
+from torchvision import transforms
 
 from data_prep.filereaders import *
 from data_prep.helperfunctions import *
@@ -20,7 +21,7 @@ class get_loss(torch.nn.Module):
         #self.criterion = nn.KLDivLoss()
 
 
-    def forward(self,predT, srcClrT, srcDepthT,ptCldT, ptCldSize, targetTransformT, calibFileRootDir, device):
+    def forward(self,predT, srcClrT, srcDepthT,ptCldT, ptCldSize, targetTransformT, calibFileRootDir, device, mode='rotation'):
 
         targetTransformT = moveToDevice(targetTransformT, device)
         predT = moveToDevice(predT, device)
@@ -67,40 +68,62 @@ class get_loss(torch.nn.Module):
 
         ptCloudPred = torch.matmul(predTransform, torch.transpose(ptCloudBaseHomo,2,1))
 
-        # Calculate Euclidean Distance between the 
-        #euclideanDistancePtCld = calculateEucledianDistOfPointClouds(torch.transpose(ptCloudTarget,2,1)[:,:,:3], torch.transpose(ptCloudPred,2,1)[:,:,:3], ptCldSize)
-        manhattanDistancePtCld = calculateManhattanDistOfPointClouds(torch.transpose(ptCloudTarget,2,1)[:,:,:3], torch.transpose(ptCloudPred,2,1)[:,:,:3], ptCldSize)
+        if mode == 'rotation':
+            # Calculate Euclidean Distance between the 
+            manhattanDistancePtCld = calculateManhattanDistOfPointClouds(torch.transpose(ptCloudTarget,2,1)[:,:,:3], torch.transpose(ptCloudPred,2,1)[:,:,:3], ptCldSize)
 
+            # Get inv pred Transformm
+            invPredTransform = calculateInvRTTensor(predTransform[:,:3,:3],predTransform[:,:3,3])
 
-        """
-        # Step 2
-        # Get the image tensor by projecting the point cloud back to image plane
-        # These points are in the image coordinate frame
-        PredPtCldImgCord = getImageTensorFrmPtCloud(P_rect, ptCloudPred)
+            # Since reverting only the translation, predTransform[:,:3,:3] = eye 
+            predTransform[:,:3,:3] = torch.eye(3)
+            rotationCorrectedPtCld = torch.matmul(predTransform,torch.transpose(ptCloudBaseHomo,2,1))
 
-        # Transpose the vectors to create a mask
-        PredPtCldImgCord = torch.transpose(PredPtCldImgCord,2,1)
+            # Step 2
+            # Get the image tensor by projecting the point cloud back to image plane
+            # These points are in the image coordinate frame
+            PredPtCldImgCord = getImageTensorFrmPtCloud(P_rect, rotationCorrectedPtCld)
 
-        # Now filter the points that are not in front of the camera 
-        imgHeight = 375
-        imgWidth = 1242
+            # Transpose the vectors to create a mask
+            PredPtCldImgCord = torch.transpose(PredPtCldImgCord,2,1)
 
-        # Replace the 4th coloum of pt by intensities
-        ptCloudPred = torch.cat((torch.transpose(ptCloudPred,2,1)[:,:,:3], torch.unsqueeze(ptCldT[:,:,3],dim=2)),dim=2)
+            # Now filter the points that are not in front of the camera 
+            imgHeight = 375
+            imgWidth = 1242
+
+            # Replace the 4th coloum of pt by intensities
+            rotationCorrectedPtCld = torch.cat((torch.transpose(rotationCorrectedPtCld,2,1)[:,:,:3], torch.unsqueeze(ptCldT[:,:,3],dim=2)),dim=2)
         
-        predImgCoord, ptCloudPred = filterPtClds(PredPtCldImgCord, ptCloudPred, imgHeight, imgWidth)
+            predImgCoord, rotationCorrectedPtCld = filterPtClds(PredPtCldImgCord, rotationCorrectedPtCld, imgHeight, imgWidth)
         
-        # create Depth Image tensor
-        predDepthTensor = createImage(predImgCoord, ptCloudPred[:,:,2],imgWidth, imgHeight)
-        
-        diffPredTarget = torch.subtract(moveToDevice(predDepthTensor,targetDepthT.get_device()).squeeze(3), targetDepthT)
+            # create Depth Image tensor
+            predDepthTensor = createImage(predImgCoord, rotationCorrectedPtCld[:,:,2],imgWidth, imgHeight).transpose(1,3).transpose(2,3)
+            predIntensityTensor = createImage(predImgCoord, rotationCorrectedPtCld[:,:,3],imgWidth, imgHeight).transpose(1,3).transpose(2,3)
 
-        photometricLoss = torch.sum(torch.pow(diffPredTarget,2))/2
-        """
+            # sanity check the images 
+            #sanityCheckDepthMaps(predDepthTensor,predIntensityTensor)
 
-        manhattanDistanceLoss = torch.mean(manhattanDistancePtCld) # +torch.mean(euclideanDistanceIntensityPtCld),2)
+            # Caluclate the depth map for next stage filtering
+            # create a depthTensor such that channel 1 and 2 = depth maps and channel 3 is intensity map
+            rotationCorrectedDepthMap = torch.empty_like(srcDepthT.cpu())
+            rotationCorrectedDepthMap[:,0] = predDepthTensor[:,0]
+            rotationCorrectedDepthMap[:,1] = predDepthTensor[:,0]
+            rotationCorrectedDepthMap[:,2] = predIntensityTensor[:,0]
+        
+            imgTensorPreProc = transforms.Compose([
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])
 
-        totalLoss = manhattanDistanceLoss + rotationLoss + translationLoss  #+ photometricLoss
+            rotationCorrectedDepthMap = imgTensorPreProc(rotationCorrectedDepthMap)
+
+            manhattanDistanceLoss = torch.mean(manhattanDistancePtCld) # +torch.mean(euclideanDistanceIntensityPtCld),2)
+
+            totalLoss = manhattanDistanceLoss + rotationLoss  #+ photometricLoss
         
-        
-        return(totalLoss.type(torch.float32),manhattanDistanceLoss)
+            return(totalLoss.type(torch.float32),manhattanDistanceLoss,rotationCorrectedDepthMap)
+
+        else:
+            euclideanDistancePtCld = calculateEucledianDistOfPointClouds(torch.transpose(ptCloudTarget,2,1)[:,:,:3], torch.transpose(ptCloudPred,2,1)[:,:,:3], ptCldSize)
+            euclideanDistanceLoss = torch.mean(euclideanDistancePtCld)
+            totalLoss = euclideanDistanceLoss + translationLoss
+            return(totalLoss.type(torch.float32))
