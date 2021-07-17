@@ -11,12 +11,14 @@ camToVeloCalibFile = "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw
 
 pathToPretrainedModel = "/home/akshay/pytorchEnv/targetless_calibration/src/model/trained/bestTargetCalibrationModel.pth"
 
-logsDirs = "/home/akshay/pytorchEnv/targetless_calibration/testing/logs"
+logsDirsTraining = "/home/akshay/pytorchEnv/targetless_calibration/logs/training"
+logsDirsTesting = "/home/akshay/pytorchEnv/targetless_calibration/logs/testing"
+logsDirsEvaluation = "/home/akshay/pytorchEnv/targetless_calibration/logs/evaluation"
 
 calibrationDir = "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/2011_09_26/"
 
 training = dict(
-    batchSize = 3,
+    batchSize = 6,
     epoch = 30,
     learningRate = 0.0001,
     beta0 = 0.9,

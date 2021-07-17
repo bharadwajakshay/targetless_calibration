@@ -11,6 +11,8 @@ from data_prep.dataLoader import *
 import importlib
 from pathlib import Path
 import provider
+import time
+
 from model import regressor
 os.environ["CUDA_VISIBLE_DEVICES"] = '0,1,2'
 from model.lossFunction import get_loss
@@ -43,8 +45,10 @@ _Debug = False
 def evaluate(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader, calibFileRootDir):
 
     simpleDistanceSE3 = np.empty(0)
-    errorTranslationVec = np.empty((len(dataLoader),3))
-    errorEulerAngleVec = np.empty((len(dataLoader),3))
+    RMSETranslationVec = np.empty((len(dataLoader),3))
+    RMSEEulerAngleVec = np.empty((len(dataLoader),3))
+    MAETranslationVec = np.empty((len(dataLoader),3))
+    MAEEulerAngleVec = np.empty((len(dataLoader),3))
 
     for j, data in tqdm(enumerate(dataLoader,0), total=len(dataLoader)):
 
@@ -89,60 +93,34 @@ def evaluate(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader, 
         predEulerAngles = matrix_to_euler_angles(predRot, "ZXY")
         targetEulerAngles = matrix_to_euler_angles(gtRot, "ZXY")
 
-        
-        errorEulerAngle = torch.square(targetEulerAngles - predEulerAngles)
-        errorEulerAngle = torch.rad2deg(torch.sqrt(torch.mean(errorEulerAngle,dim=0)))
-        errorEulerAngleVec[j,:] = errorEulerAngle.to('cpu').numpy()
-        
-        errorTranslation = torch.square(gtT - predT)
-        errorTranslation = torch.sqrt(torch.mean(errorTranslation,dim=0))
-        errorTranslationVec[j,:] = errorTranslation.to('cpu').numpy()
-        
-
         '''
-        errorEulerAngle = torch.abs(targetEulerAngles - predEulerAngles)
-        errorEulerAngle = torch.rad2deg(torch.mean(errorEulerAngle,dim=0))
-        errorEulerAngleVec[j,:] = errorEulerAngle.to('cpu').numpy()
-        
-        errorTranslation = torch.abs(gtT - predT)
-        errorTranslation = torch.mean(errorTranslation,dim=0)
-        errorTranslationVec[j,:] = errorTranslation.to('cpu').numpy()
+        #####################################################################################
+        Root Mean Squared Error
+        #####################################################################################
         '''
-        
-        
-        
-        
+        RMSEEulerAngleVec = torch.square(torch.rad2deg(predEulerAngles - targetEulerAngles)).to('cpu').numpy()
+        RMSETranslationVec[j,:] = torch.square(predT - gtT).to('cpu').numpy()
+
+    
         '''
-        # Visualization Testing
-        # Conert the image tensor to image 
-        clrImage = convertImageTensorToCV(optional[0])
-        # Step1: Get Ground Truth Data
-        # Get calibration data
-        [P, rectR, rT] = findCalibParameterTensor(calibFileRootDir)
-        gTData = getGroundTruthPointCloud(ptCldT, P, rectR, rT)
-        # Visualization
-        image = overlayPtCldOnImg(clrImage, ptCldT, rT, P, rectR)
-        for batch in range(0,image.shape[0]):
-            cv2.imwrite('testing/images/Evaluation/groundTruth_'+str(j)+'_'+str(batch)+'.png', image[batch])
-
-        # Step2: Multiply the pointcloud with Target transform
-        targetTransformedPtCld = getGroundTruthPointCloud(gTData,__,torch.eye(4,dtype=torch.float64), targetTransformT)
-        imageTargetTransform = overlayPtCldOnImg(clrImage, targetTransformedPtCld, torch.eye(4,dtype=torch.float64), P, torch.eye(4,dtype=torch.float64))
-
-        for batch in range(0,image.shape[0]):
-            cv2.imwrite('testing/images/Evaluation/TargetTransform'+str(j)+'_'+str(batch)+'.png', imageTargetTransform[batch])
-
-        # Step3: Multiply the pointcloud with Target transform with inverse of predicted transform
-        invPredRT = calculateInvRTTensor(predRot, predT).type(torch.float64)
-        invPredTransformedPtCld = getGroundTruthPointCloud(gTData,__,torch.eye(4,dtype=torch.float64), invPredRT)
-        imageInvPredTransform = overlayPtCldOnImg(clrImage, invPredTransformedPtCld, torch.eye(4,dtype=torch.float64), P, torch.eye(4,dtype=torch.float64))
-
-        for batch in range(0,image.shape[0]):
-            cv2.imwrite('testing/images/Evaluation/InvPredTransform'+str(j)+'_'+str(batch)+'.png', imageInvPredTransform[batch])
+        #####################################################################################
+        Mean Absolute Error
+        #####################################################################################
         '''
+        MAEEulerAngleVec[j,:] = torch.abs(torch.rad2deg(predEulerAngles - targetEulerAngles)).to('cpu').numpy()        
+        MAETranslationVec[j,:] = torch.abs(predT - gtT).to('cpu').numpy()
 
         
-    return(np.mean(simpleDistanceSE3), errorEulerAngleVec, errorTranslationVec)
+
+    RMSEEulerAngleVec = np.sqrt(np.mean(RMSEEulerAngleVec, axis=0))
+    RMSETranslationVec = np.sqrt(np.mean(RMSETranslationVec, axis=0))
+
+    MAEEulerAngleVec = np.sqrt(np.mean(MAEEulerAngleVec, axis=0))
+    MAETranslationVec = np.sqrt(np.mean(MAETranslationVec, axis=0))
+        
+
+        
+    return(np.mean(simpleDistanceSE3), RMSEEulerAngleVec, RMSETranslationVec, MAEEulerAngleVec, MAETranslationVec)
 
 
 def main():
@@ -194,6 +172,14 @@ def main():
 
     evaluateDataLoader = torch.utils.data.DataLoader(EVALUATE_DATASET, batch_size=1, shuffle=True, num_workers=0)
 
+    # Check if log directories are available
+    if not os.path.exists(config.logsDirsEvaluation):
+        os.makedirs(config.logsDirsEvaluation)
+
+    # open a log file
+    timeStamp = str(time.time())
+    logFile = open(os.path.join(config.logsDirsEvaluation,timeStamp+'.txt'),'a')
+
     # Error 
     simpleDistanceSE3Err = 100
     distanceErr = np.empty(0)
@@ -211,29 +197,37 @@ def main():
             print("Failed to load the model. Continuting without loading weights")
 
     # Check if the logs folder exitst, if not make the dir
-    if not os.path.isdir(config.logsDirs):
+    if not os.path.isdir(config.logsDirsEvaluation):
         os.makedirs(config.logsDirs)
-        Path(os.path.join(config.logsDirs,'DistanceErr.npy')).touch()
-        Path(os.path.join(config.logsDirs,'ErrorInAngles.npy')).touch()
-        Path(os.path.join(config.logsDirs,'ErrorInTranslation.npy')).touch()
+        Path(os.path.join(config.logsDirsEvaluation,'DistanceErr.npy')).touch()
+        Path(os.path.join(config.logsDirsEvaluation,'ErrorInAngles.npy')).touch()
+        Path(os.path.join(config.logsDirsEvaluation,'ErrorInTranslation.npy')).touch()
 
     manhattanDistArray = np.empty(0)
 
     with torch.no_grad():
-        simpleDistanceSE3, errorInAngles, errorInTranslation = evaluate(resnetClrImg, resnetDepthImg, regressor_model, maxPool, evaluateDataLoader, config.calibrationDir)
-        meanErrorsInAngles = np.mean(errorInAngles,axis=0)
-        meanErrorsInTranslation = np.mean(errorInTranslation,axis=0)
+        simpleDistanceSE3, RMSEInAngles, RMSEInTranslation, MAEInAngles, MAEInTranslation = evaluate(resnetClrImg, resnetDepthImg, regressor_model, maxPool, evaluateDataLoader, config.calibrationDir)
+        
 
         print("Calculated mean Errors:" +  str(simpleDistanceSE3))
-        print("Mean Angular Error: "+str(meanErrorsInAngles))
-        print("Mean Translation Error: "+str(meanErrorsInTranslation))
+        print("RMSE Angular Error: "+str(RMSEInAngles))
+        print("RMSE Translation Error: "+str(RMSEInTranslation))
+        print("MAE Angular Error: "+str(MAEInAngles))
+        print("MAE Translation Error: "+str(MAEInTranslation))
+
+
+    logFile.write('Root Mean Square Error\nAngle: '+str(RMSEInAngles)+'\nTranslation: '+str(RMSEInTranslation)+'\n')
+    logFile.write('Mean Absolute Error\nAngle: '+str(MAEInAngles)+'\nTranslation: '+str(MAEInTranslation))
 
     
-    np.save(os.path.join(config.logsDirs,'ErrorInAngles.npy'), errorInAngles)
-    np.save(os.path.join(config.logsDirs,'ErrorInTranslation.npy'), errorInTranslation)
-
+    '''
+    np.save(os.path.join(config.logsDirs,'RMSEInAngles.npy'), RMSEInAngles)
+    np.save(os.path.join(config.logsDirs,'RMSEInTranslation.npy'), RMSEInTranslation)
+    np.save(os.path.join(config.logsDirs,'MAEInAngles.npy'), MAEInAngles)
+    np.save(os.path.join(config.logsDirs,'MAEInTranslation.npy'), MAEInTranslation)
+    '''
     
-    print("something")
+    logFile.close()
         
             
 
