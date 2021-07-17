@@ -33,7 +33,7 @@ sys.path.append(os.path.join(ROOT_DIR, 'model'))
 modelPath = '/home/akshay/targetless_calibration/src/model/trained/bestTargetCalibrationModel.pth'
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
 _Debug = False
 
@@ -220,7 +220,7 @@ def main():
             optimizerRegression.zero_grad()
             resnetClrImg = resnetClrImg.eval()
             maxPool = maxPool.eval()
-            resnetDepthImg = resnetDepthImg.train()
+            resnetDepthImg = resnetDepthImg.eval()
             regressor_model = regressor_model.train()
 
             # Transpose the tensors such that the no of channels are the 2nd term
@@ -228,21 +228,14 @@ def main():
             # Color Image - Cuda 0
             srcClrT = srcClrT.to('cuda')
             featureMapClrImg = resnetClrImg(srcClrT)
-            # Move it back to cpu
-            #srcClrT = srcClrT.to('cpu')
-            #resnetClrImg = resnetClrImg.to('cpu')
-            #featureMapClrImg = featureMapClrImg.to('cpu')
+
 
             # Depth Image - Cuda 0
             srcDepthT = srcDepthT.to('cuda')
             maxPool = maxPool.to('cuda')
             maxPooledDepthImg = maxPool(srcDepthT)
             featureMapDepthImg = resnetDepthImg(maxPooledDepthImg)
-            # Move it back to cpu
-            #srcDepthT = srcDepthT.to('cpu')
-            #maxPool = maxPool.to('cpu')
-            #resnetDepthImg = resnetDepthImg.to('cpu')
-            #featureMapDepthImg = featureMapDepthImg.to('cpu')
+ 
 
 
             # Concatinate the feature Maps # Still in Cuda 0
