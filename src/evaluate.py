@@ -37,7 +37,7 @@ sys.path.append(os.path.join(ROOT_DIR, 'model'))
 modelPath = '/home/akshay/targetless_calibration/src/model/trained/bestTargetCalibrationModel.pth'
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
 _Debug = False
 
@@ -173,12 +173,13 @@ def main():
     evaluateDataLoader = torch.utils.data.DataLoader(EVALUATE_DATASET, batch_size=1, shuffle=True, num_workers=0)
 
     # Check if log directories are available
-    if not os.path.exists(config.logsDirsEvaluation):
-        os.makedirs(config.logsDirsEvaluation)
+    logsDirsEvaluation = os.path.join(config.logsDirs,'evaluate')
+    if not os.path.exists(logsDirsEvaluation):
+        os.makedirs(logsDirsEvaluation)
 
     # open a log file
     timeStamp = str(time.time())
-    logFile = open(os.path.join(config.logsDirsEvaluation,timeStamp+'.txt'),'a')
+    logFile = open(os.path.join(logsDirsEvaluation,timeStamp+'.txt'),'a')
 
     # Error 
     simpleDistanceSE3Err = 100
@@ -195,13 +196,6 @@ def main():
             regressor_model.load_state_dict(model_weights['modelStateDict'])
         except:
             print("Failed to load the model. Continuting without loading weights")
-
-    # Check if the logs folder exitst, if not make the dir
-    if not os.path.isdir(config.logsDirsEvaluation):
-        os.makedirs(config.logsDirs)
-        Path(os.path.join(config.logsDirsEvaluation,'DistanceErr.npy')).touch()
-        Path(os.path.join(config.logsDirsEvaluation,'ErrorInAngles.npy')).touch()
-        Path(os.path.join(config.logsDirsEvaluation,'ErrorInTranslation.npy')).touch()
 
     manhattanDistArray = np.empty(0)
 

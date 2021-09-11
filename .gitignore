@@ -157,3 +157,7 @@ data/*
 
 # Text file 
 *.txt
+
+# Tar files
+*.tar.gz
+*.zip

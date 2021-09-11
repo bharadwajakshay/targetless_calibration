@@ -1,6 +1,13 @@
 {
     "configurations": [
         {
+            "name": "Python: Train VAE",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/trainVAE.py",
+            "console": "integratedTerminal"
+        },
+        {
             "name": "Python: Test Data Loader",
             "type": "python",
             "request": "launch",
