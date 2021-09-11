@@ -123,7 +123,7 @@ class dataLoader(Dataset):
         """
         # Define preprocessing Pipeline
         imgTensorPreProc = transforms.Compose([
-        #transforms.Resize(224),
+        #transforms.Resize(188),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ])
@@ -145,10 +145,17 @@ class dataLoader(Dataset):
         #srcDepthImg = normalizePILGrayImg(srcDepthImg) # Bring it to the range of [0,1]
         srcDepthImg = imgTensorPreProc(srcDepthImg)
 
-        __, __, srcIntensityImg = readimgfromfilePIL(targetDepthImageFileName)
+        __, __, tgtDepthImg = readimgfromfilePIL(targetDepthImageFileName)
+        #srcDepthImg = normalizePILGrayImg(srcDepthImg) # Bring it to the range of [0,1]
+        tgtDepthImg = imgTensorPreProc(tgtDepthImg)
+
+        __, __, srcIntensityImg = readimgfromfilePIL(srcIntensityImageFileName)
         #srcIntensityImg = normalizePILGrayImg(srcIntensityImg) # Bring it to the range of [0,1]
         srcIntensityImg = imgTensorPreProc(srcIntensityImg)
 
+        __, __, tgtIntensityImg = readimgfromfilePIL(targetIntensityImageFileName)
+        #srcIntensityImg = normalizePILGrayImg(srcIntensityImg) # Bring it to the range of [0,1]
+        tgtIntensityImg = imgTensorPreProc(tgtIntensityImg)
 
         __, __, srcClrImg = readimgfromfilePIL(srcColorImageFileName)
         colorImage = np.array(srcClrImg)
@@ -176,9 +183,10 @@ class dataLoader(Dataset):
 
         # Combine Depth information with intensity information on another channel
         srcDepthImg[2,:,:] = srcIntensityImg[0,:,:]
+        tgtDepthImg[2,:,:] = tgtIntensityImg[0,:,:]
 
 
-        return (srcClrImg, srcDepthImg, ptCld, ptcldSize, transform,[colorImage])
+        return (srcClrImg, srcDepthImg, tgtDepthImg, ptCld, ptcldSize, transform,[colorImage])
 
 
 if __name__ == "__main__":
