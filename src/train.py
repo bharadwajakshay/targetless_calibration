@@ -26,6 +26,7 @@ from common.tensorTools import calculateInvRTTensor, exponentialMap, moveToDevic
 import config
 from torchsummary import summary
 from pytictoc import TicToc
+from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -41,14 +42,12 @@ _Debug = False
 def test(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader):
 
     simpleDistanceSE3 = np.empty(0)
-    # Check if log directories are available
-    if not os.path.exists(config.logsDirsTesting):
-        os.makedirs(config.logsDirsTesting)
+  
 
     for j, data in tqdm(enumerate(dataLoader,0), total=len(dataLoader)):
 
        # Expand the data into its respective components
-        srcClrT, srcDepthT, ptCldT, __, targetTransformT, optional = data
+        srcClrT, srcDepthT, __, ptCldT, ptCldSize, targetTransformT, options = data
 
         # Transpose the tensors such that the no of channels are the 2nd term
         srcClrT = srcClrT.to('cuda')
@@ -153,8 +152,13 @@ def main():
 
     
     # Check if log directories are available
-    if not os.path.exists(config.logsDirsTraining):
-        os.makedirs(config.logsDirsTraining)
+    logsDirsTraining = os.path.join(config.logsDirs,'training')
+    if not os.path.exists(logsDirsTraining):
+        os.makedirs(logsDirsTraining)
+
+    logsDirsTesting = os.path.join(config.logsDirs,'testing')
+    if not os.path.exists(logsDirsTesting):
+        os.makedirs(logsDirsTesting)
 
     
 
@@ -175,15 +179,15 @@ def main():
     )
 
 
-    schedulerRegressor = torch.optim.lr_scheduler.MultiStepLR(optimizerRegression, milestones=[19,24], gamma=0.1)
-    schedulerResNet = torch.optim.lr_scheduler.MultiStepLR(optimizerResNET, milestones=[19,24], gamma=0.1)
+    schedulerRegressor = torch.optim.lr_scheduler.MultiStepLR(optimizerRegression, milestones=[24,30], gamma=0.1)
+    schedulerResNet = torch.optim.lr_scheduler.MultiStepLR(optimizerResNET, milestones=[24,30], gamma=0.1)
 
     start_epoch = 0
     global_epoch = 0
     global_step = 0
     besteulerdistance = 100
     # Error 
-    simpleDistanceSE3Err = 100
+    simpleDistanceSE3Err = float(config.previousBestSE3Dist)
     distanceErr = np.empty(0)
     angularErr = np.empty(0)
     translationErr = np.empty(0)
@@ -206,15 +210,29 @@ def main():
 
     manhattanDistArray = np.empty(0)
 
-    # Training 
-    for epoch in range(start_epoch, epochs):
+    # Get timestamp 
+    currentTimeStamp = datetime.now()
+    currentTimeStamp = datetime.timestamp(currentTimeStamp)
+    
+    # Open Training file 
+    logFileTraining = open(os.path.join(logsDirsTraining,str(currentTimeStamp)+'.txt'),'w')
+
+    # Open Testing file 
+    logFileTesting = open(os.path.join(logsDirsTesting,str(currentTimeStamp)+'.txt'),'w')
+
+    # Training
+    train = True
+
+    modelNotChangingCount = 0
+
+
+    while train:
 
         timeInstance.tic()
         for batch_no, data in tqdm(enumerate(trainDataLoader,0), total=len(trainDataLoader), smoothing=0.9):
-
         
             # Expand the data into its respective components
-            srcClrT, srcDepthT, ptCldT, ptCldSize, targetTransformT, options = data
+            srcClrT, srcDepthT, __, ptCldT, ptCldSize, targetTransformT, options = data
             
             optimizerResNET.zero_grad()
             optimizerRegression.zero_grad()
@@ -223,26 +241,17 @@ def main():
             resnetDepthImg = resnetDepthImg.train()
             regressor_model = regressor_model.train()
 
-            # Transpose the tensors such that the no of channels are the 2nd term
 
             # Color Image - Cuda 0
             srcClrT = srcClrT.to('cuda')
             featureMapClrImg = resnetClrImg(srcClrT)
-            # Move it back to cpu
-            #srcClrT = srcClrT.to('cpu')
-            #resnetClrImg = resnetClrImg.to('cpu')
-            #featureMapClrImg = featureMapClrImg.to('cpu')
 
             # Depth Image - Cuda 0
             srcDepthT = srcDepthT.to('cuda')
             maxPool = maxPool.to('cuda')
             maxPooledDepthImg = maxPool(srcDepthT)
             featureMapDepthImg = resnetDepthImg(maxPooledDepthImg)
-            # Move it back to cpu
-            #srcDepthT = srcDepthT.to('cpu')
-            #maxPool = maxPool.to('cpu')
-            #resnetDepthImg = resnetDepthImg.to('cpu')
-            #featureMapDepthImg = featureMapDepthImg.to('cpu')
+
 
 
             # Concatinate the feature Maps # Still in Cuda 0
@@ -250,16 +259,13 @@ def main():
 
             # Move the regressor model to Cuda 0 and pass the concatinated Feature Vector
             predTransform  = regressor_model(aggClrDepthFeatureMap,True)
-            # Move the regressor back to CPU
-            #regressor_model = regressor_model.to('cpu')
 
             # Move the loss Function to Cuda 0          
             loss, manhattanDist = loss_function(predTransform, srcClrT, srcDepthT, ptCldT, ptCldSize, targetTransformT, config.calibrationDir, 1)
-            # Move the model back to CPU
-            #loss_function = loss_function.to('cpu')
 
-                  
             loss.backward()
+
+
 
             manhattanDistArray = np.append(manhattanDistArray,manhattanDist.to('cpu').detach().numpy()) 
 
@@ -293,6 +299,11 @@ def main():
 
             global_step += 1
 
+        
+        logFileTraining.write('Global Epoch: '+str(global_epoch)+'\n')
+        logFileTraining.write('Mean Manhattan Distance: '+str(manhattanDistArray.mean())+'\n')
+        
+        print('Global Epoch: '+str(global_epoch))
         print("Mean Manhattan Distance for the epoch: "+str(manhattanDistArray.mean()))
         manhattanDistArray = np.delete(manhattanDistArray.reshape(manhattanDistArray.shape[0],1),0,1)
 
@@ -304,27 +315,47 @@ def main():
             print("Mean Angular Error: "+str(errorInAngles))
             print("Mean Translation Error: "+str(errorInTranslation))
 
+            logFileTesting.write('Global Epoch: '+str(global_epoch)+'\n')
+            logFileTesting.write("Calculated mean SE3 Errors: "+  str(simpleDistanceSE3))
+            logFileTesting.write("Mean Angular Error: "+str(errorInAngles))
+            logFileTesting.write("Mean Translation Error: "+str(errorInTranslation))
+
             distanceErr = np.append(distanceErr,simpleDistanceSE3)
             angularErr = np.append(angularErr, errorInAngles)
             translationErr = np.append(translationErr, errorInTranslation)
+
+            # Increment the model not bettering count
+            modelNotChangingCount += 1
 
             if (simpleDistanceSE3 <  simpleDistanceSE3Err):
 
                 simpleDistanceSE3Err = simpleDistanceSE3
                 saveModelParams(resnetDepthImg, regressor_model, optimizerResNET, optimizerRegression, global_epoch, modelPath)
-
+                modelNotChangingCount = 0
         
         schedulerRegressor.step()
         schedulerResNet.step()
         global_epoch += 1
 
+        # Check termination condition
+        if config.training['epoch'] == -1:
+            if modelNotChangingCount == 3:
+                train = False
+        else:
+            if global_epoch == config.training['epoch']:
+                train = False
 
-    np.save(os.path.join(config.logsDirs,'DistanceErr.npy'), distanceErr)
-    np.save(os.path.join(config.logsDirs,'ErrorInAngles.npy'), errorInAngles)
-    np.save(os.path.join(config.logsDirs,'ErrorInTranslation.npy'), errorInTranslation)
+    np.save(os.path.join(logsDirsTesting,'DistanceErr.npy'), distanceErr)
+    np.save(os.path.join(logsDirsTesting,'ErrorInAngles.npy'), errorInAngles)
+    np.save(os.path.join(logsDirsTesting,'ErrorInTranslation.npy'), errorInTranslation)
+
+    logFileTraining.close()
+    logFileTesting.close()
 
     
     print("something")
+
+
         
             
 
