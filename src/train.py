@@ -1,4 +1,5 @@
 import torch
+from model.onlineCalibration import onlineCalibration
 from model.resnet import *
 import numpy as np
 from tqdm import tqdm
@@ -28,6 +29,7 @@ import config
 from torchsummary import summary
 from pytictoc import TicToc
 from datetime import datetime
+from model.onlineCalibration import onlineCalibration
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -35,14 +37,19 @@ sys.path.append(os.path.join(ROOT_DIR, 'model'))
 modelPath = '/home/akshay/targetless_calibration/src/model/trained/bestTargetCalibrationModel.pth'
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0,1,2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 _Debug = False
 
 
-def test(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader):
+def test(model, dataLoader):
 
     simpleDistanceSE3 = np.empty(0)
+
+    # Setup arrays to report the errors
+    eulerAngleErrors = np.empty((3,len(dataLoader)),dtype=float)
+    translationError = np.empty((3,len(dataLoader)),dtype=float)
+    s3DistanceError = np.empty((1,len(dataLoader)),dtype=float)
   
 
     for j, data in tqdm(enumerate(dataLoader,0), total=len(dataLoader)):
@@ -54,23 +61,11 @@ def test(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader):
         srcClrT = srcClrT.to('cuda')
         srcDepthT = srcDepthT.to('cuda')
 
-        # Cuda 0
-        featureMapClrImg = colorImgModel(srcClrT)
-        # Cuda 1
-        maxPooledDepthImg = maxPool(srcDepthT)
-        featureMapDepthImg = depthImgModel(maxPooledDepthImg)
-
-        # Cuda 0
-        aggClrDepthFeatureMap = torch.cat([featureMapDepthImg.to('cuda'),featureMapClrImg],dim=1)
-
-        # Cuda 0
-        predTransform  = regressorModel(aggClrDepthFeatureMap)
-        
+        predTransform  = model(srcClrT, srcDepthT)
 
         # Simple SE3 distance
         predRot = quaternion_to_matrix(predTransform[:,:4])
         predT = predTransform[:,4:]
-
 
         targetTransformT = moveToDevice(targetTransformT, predTransform.get_device())
 
@@ -80,24 +75,22 @@ def test(colorImgModel, depthImgModel, regressorModel, maxPool, dataLoader):
         RtR = torch.matmul(calculateInvRTTensor(predRot, predT), targetTransformT.type(torch.float32))
         
         I = moveToDevice(torch.eye(4,dtype=torch.float32), predTransform.get_device())
-        simpleDistanceSE3 = np.append(simpleDistanceSE3, torch.norm( RtR - I,'fro').to('cpu').numpy())
+
+        simpleDistanceSE3 = np.empty(RtR.shape[0],dtype=float)
+        for batchno in range(0,RtR.shape[0]):
+            simpleDistanceSE3[batchno] = torch.norm( RtR[batchno] - I,'fro').to('cpu').numpy()
+
+        s3DistanceError[0,j] = np.mean(simpleDistanceSE3)
 
         # Caluclate the euler angles from rotation matrix
         predEulerAngles = matrix_to_euler_angles(predRot, "ZXY")
         targetEulerAngles = matrix_to_euler_angles(gtRot, "ZXY")
         errorEulerAngle = torch.abs(targetEulerAngles - predEulerAngles)
-        errorEulerAngle = torch.rad2deg(torch.mean(errorEulerAngle,dim=0))
+        eulerAngleErrors[:,j] = torch.rad2deg(torch.mean(errorEulerAngle,dim=0)).to('cpu').numpy()
         errorTranslation = torch.abs(gtT - predT)
-        errorTranslation = torch.mean(errorTranslation,dim=0)
-
-        """
-        print(errorEulerAngle)
-        print(errorTranslation)
+        translationError[:,j] = torch.mean(errorTranslation,dim=0).to('cpu').numpy()
         
-        print("Breakpoint")
-        """    
-        
-    return(np.mean(simpleDistanceSE3), errorEulerAngle.to('cpu').numpy(), errorTranslation.to('cpu').numpy())
+    return(s3DistanceError, eulerAngleErrors, translationError)
 
 
 def main():
@@ -107,37 +100,31 @@ def main():
 
     # Path to Pretrained models
     modelPath = config.pathToPretrainedModel
+    if not os.path.exists(modelPath):
+        os.makedirs('/'.join(modelPath.split('/')[:-1]))
+
 
     # Time instance
     timeInstance = TicToc()
 
-    """
-    +---------------------------+--------+
-    |      Model/Variable       |  GPU   |
-    +---------------------------+--------+
-    | RESNet50: Color Image     | CUDA 0 |
-    | RESNet50: Depth Image     | CUDA 1 |
-    | RESNet50: Intensity Image | CUDA 2 |
-    | Regressor NW              | CUDA 0 |
-    | LossFunction              | CUDA 1 |
-    | Color Image Tensor        | CUDA 0 |
-    | Depth Image Tensor        | CUDA 1 |
-    | Intensity Image Tensor    | CUDA 2 |
-    +---------------------------+--------+
-    """
 
     # empty the CUDA memory
     torch.cuda.empty_cache()
 
-    # Choose the RESNet network used to get features from the images 
-    resnetClrImg = resnet50(pretrained=True).to('cuda')
-    resnetDepthImg = resnet50(pretrained=False).to('cuda')
-    regressor_model = regressor.regressor().to('cuda')
-    loss_function = get_loss().to('cuda')
+    # Call the main model which includes all the other models
+    model = onlineCalibration()
+    if torch.cuda.is_available():
+        device = 'cuda'
+        if torch.cuda.device_count() > 1:
+            print('Multiple GPUs found. Moving to Dataparallel approach')
+            model = torch.nn.DataParallel(model)
+    else: 
+        device = 'cpu'
 
-    # define max pooling layer
-    maxPool = torch.nn.MaxPool2d(5, stride=1)
-    #resnetIntensityImg = resnet50(pretrained=True)
+    model = model.to(device)
+
+    # get th eloss fucntion
+    loss_function = get_loss().to(device)
 
     # Get the max point cloud size
     file = open(config.maxPtCldSizeFile,'r')
@@ -164,16 +151,8 @@ def main():
 
     
 
-    optimizerRegression = torch.optim.Adam(
-        regressor_model.parameters(),
-        lr = config.training['learningRate'],
-        betas = (config.training['beta0'], config.training['beta1']),
-        eps = config.training['eps'],
-        weight_decay = config.training['decayRate'],
-    )
-
-    optimizerResNET = torch.torch.optim.Adam(
-        resnetDepthImg.parameters(),
+    optimizermodel = torch.optim.Adam(
+        model.parameters(),
         lr = config.training['learningRate'],
         betas = (config.training['beta0'], config.training['beta1']),
         eps = config.training['eps'],
@@ -181,8 +160,8 @@ def main():
     )
 
 
-    schedulerRegressor = torch.optim.lr_scheduler.MultiStepLR(optimizerRegression, milestones=[24,30], gamma=0.1)
-    schedulerResNet = torch.optim.lr_scheduler.MultiStepLR(optimizerResNET, milestones=[24,30], gamma=0.1)
+    schedulerModel = torch.optim.lr_scheduler.MultiStepLR(optimizermodel, milestones=[24,30], gamma=0.1)
+    
 
     start_epoch = 0
     global_epoch = 0
@@ -190,16 +169,16 @@ def main():
     besteulerdistance = 100
     # Error 
     simpleDistanceSE3Err = float(config.previousBestSE3Dist)
-    distanceErr = np.empty(0)
-    angularErr = np.empty(0)
-    translationErr = np.empty(0)
+    distanceErr = np.empty((1,0))
+    angularErr = np.empty((3,0))
+    translationErr = np.empty((3,0))
 
-    # Check if there are existing models, If so, Load them
+    # Check if there are existing models, If so, Load themconfig
     # Check if the file exists
     if os.path.isfile(modelPath):
         try:
             model_weights = torch.load(modelPath)
-            regressor_model.load_state_dict(model_weights['modelStateDict'])
+            model.load_state_dict(model_weights['modelStateDict'])
         except:
             print("Failed to load the model. Continuting without loading weights")
 
@@ -229,6 +208,7 @@ def main():
 
 
     while train:
+        model = model.train()
 
         timeInstance.tic()
         for batch_no, data in tqdm(enumerate(trainDataLoader,0), total=len(trainDataLoader), smoothing=0.9):
@@ -236,51 +216,14 @@ def main():
             # Expand the data into its respective components
             srcClrT, srcDepthT, __, ptCldT, ptCldSize, targetTransformT, options = data
             #print(f'time taken to read the data is {timeInstance.toc()}')
-            
-            optimizerResNET.zero_grad()
-            optimizerRegression.zero_grad()
-            resnetClrImg = resnetClrImg.eval()
-            maxPool = maxPool.eval()
-            resnetDepthImg = resnetDepthImg.train()
-            regressor_model = regressor_model.train()
-
 
             # Color Image - Cuda 0
-            srcClrT = srcClrT.to('cuda')
-            featureMapClrImg = resnetClrImg(srcClrT)
+            srcClrT = srcClrT.to(device)
 
             # Depth Image - Cuda 0
-            srcDepthT = srcDepthT.to('cuda')
-            maxPool = maxPool.to('cuda')
-                  
-
-            '''
-            ###################################################################################################################################
-            # Loop 1: ResNet-50 and Regressionl Network (Angular Regression)
-            #
-            ###################################################################################################################################
-            '''
-            
-            maxPooledDepthImg = maxPool(srcDepthT)
-            featureMapDepthImg = resnetDepthImg(maxPooledDepthImg)
-
-
-            # Set Grad required for the ResNet depth n/w
-            resnetDepthImg.requires_grad_(True)
-
-            # Set network matching and regressor nw
-            regressor_model.featurematching.requires_grad_(True)
-            regressor_model.regressionRot.requires_grad_(True)
-            regressor_model.regressionTrans.requires_grad_(False)
-
-            featureMapDepthImg = resnetDepthImg(maxPooledDepthImg)
-
-            # Concatinate the feature Maps # Still in Cuda 0
-            aggClrDepthFeatureMap = torch.cat([featureMapDepthImg,featureMapClrImg],dim=1)
-
-            
-            # Move the regressor model to Cuda 0 and pass the concatinated Feature Vector
-            predTransform  = regressor_model(aggClrDepthFeatureMap,True)
+            srcDepthT = srcDepthT.to(device)
+             
+            predTransform  = model(srcClrT, srcDepthT)
 
             # Move the loss Function to Cuda 0    
             #timeInstance.tic()      
@@ -288,40 +231,36 @@ def main():
             #print(f'time taken to calculate loss is {timeInstance.toc()}')
 
             loss.backward()
-
-
-
             manhattanDistArray = np.append(manhattanDistArray,manhattanDist.to('cpu').detach().numpy()) 
 
-            # Debug
-            if _Debug:
-                summary(resnetClrImg)
-                summary(resnetDepthImg)
-                summary(regressor_model)   
+        # Debug
+        if _Debug:
+            summary(resnetClrImg)
+            summary(resnetDepthImg)
+            summary(regressor_model)   
 
 
-                f = open("prestep.txt",'w')
-                for name, param in regressor_model.named_parameters():
-                    if param.requires_grad:
-                        f.write(name)
-                        f.write(str(param.data.to('cpu').numpy()))
-                        f.write('\n')
-                f.close()
+            f = open("prestep.txt",'w')
+            for name, param in regressor_model.named_parameters():
+                if param.requires_grad:
+                    f.write(name)
+                    f.write(str(param.data.to('cpu').numpy()))
+                    f.write('\n')
+            f.close()
 
-            optimizerRegression.step()
-            optimizerResNET.step()
+        optimizermodel.step()
 
-            # Debug
-            if _Debug:
-                f = open("postStep.txt",'w')
-                for name, param in regressor_model.named_parameters():
-                    if param.requires_grad:
-                        f.write(name)
-                        f.write(str(param.data.to('cpu').numpy()))
-                        f.write('\n')
-                f.close()
+        # Debug
+        if _Debug:
+            f = open("postStep.txt",'w')
+            for name, param in regressor_model.named_parameters():
+                if param.requires_grad:
+                    f.write(name)
+                    f.write(str(param.data.to('cpu').numpy()))
+                    f.write('\n')
+            f.close()
 
-            global_step += 1
+        global_step += 1
 
         
         logFileTraining.write('Global Epoch: '+str(global_epoch)+'\n')
@@ -333,20 +272,20 @@ def main():
 
 
         with torch.no_grad():
-            simpleDistanceSE3, errorInAngles, errorInTranslation = test(resnetClrImg, resnetDepthImg, regressor_model, maxPool, testDataLoader)
+            simpleDistanceSE3, errorInAngles, errorInTranslation = test(model, testDataLoader)
 
-            print("Calculated mean Errors:" +  str(simpleDistanceSE3))
-            print("Mean Angular Error: "+str(errorInAngles))
-            print("Mean Translation Error: "+str(errorInTranslation))
+            print("Calculated mean Errors:" +  str(np.mean(simpleDistanceSE3)))
+            print("Mean Angular Error: "+str(np.mean(errorInAngles,axis=1)))
+            print("Mean Translation Error: "+str(np.mean(errorInTranslation,axis=1)))
 
             logFileTesting.write('Global Epoch: '+str(global_epoch)+'\n')
-            logFileTesting.write("Calculated mean SE3 Errors: "+  str(simpleDistanceSE3))
-            logFileTesting.write("Mean Angular Error: "+str(errorInAngles))
-            logFileTesting.write("Mean Translation Error: "+str(errorInTranslation))
+            logFileTesting.write("Calculated mean SE3 Errors: "+  str(np.mean(simpleDistanceSE3)))
+            logFileTesting.write("Mean Angular Error: "+str(np.mean(errorInAngles,axis=1)))
+            logFileTesting.write("Mean Translation Error: "+str(np.mean(errorInTranslation,axis=1)))
 
-            distanceErr = np.append(distanceErr,simpleDistanceSE3)
-            angularErr = np.append(angularErr, errorInAngles)
-            translationErr = np.append(translationErr, errorInTranslation)
+            distanceErr = np.append(distanceErr, simpleDistanceSE3)
+            angularErr = np.append(angularErr, errorInAngles,axis=1)
+            translationErr = np.append(translationErr, errorInTranslation,axis=1)
 
             # Increment the model not bettering count
             modelNotChangingCount += 1
@@ -354,24 +293,19 @@ def main():
             if (simpleDistanceSE3 <  simpleDistanceSE3Err):
 
                 simpleDistanceSE3Err = simpleDistanceSE3
-                saveModelParams(resnetDepthImg, regressor_model, optimizerResNET, optimizerRegression, global_epoch, modelPath)
+                saveModelParams(model, optimizermodel, global_epoch, modelPath)
                 modelNotChangingCount = 0
         
-        schedulerRegressor.step()
-        schedulerResNet.step()
+        schedulerModel.step()
         global_epoch += 1
 
-        # Check termination condition
-        if config.training['epoch'] == -1:
-            if modelNotChangingCount == 3:
-                train = False
-        else:
-            if global_epoch == config.training['epoch']:
-                train = False
+
+        if global_epoch == config.training['epoch']:
+            train = False
 
     np.save(os.path.join(logsDirsTesting,'DistanceErr.npy'), distanceErr)
-    np.save(os.path.join(logsDirsTesting,'ErrorInAngles.npy'), errorInAngles)
-    np.save(os.path.join(logsDirsTesting,'ErrorInTranslation.npy'), errorInTranslation)
+    np.save(os.path.join(logsDirsTesting,'ErrorInAngles.npy'), angularErr)
+    np.save(os.path.join(logsDirsTesting,'ErrorInTranslation.npy'), translationErr)
 
     logFileTraining.close()
     logFileTesting.close()

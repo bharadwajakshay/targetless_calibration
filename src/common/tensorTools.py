@@ -368,14 +368,12 @@ def getGroundTruthPointCloud(ptCloud, P_rect, R_rect, RT):
     return(ptCloud)
     
 
-def saveModelParams(resentModel, model, optimizerResNet, optimizerRegression, epoch, path):
+def saveModelParams(model, optimizermodel, epoch, path):
 
     print("saving the model")
     state = {'epoch': epoch,
-            'resNetModelStateDict': resentModel.state_dict(),
             'modelStateDict':model.state_dict(),
-            'optimizerResNetStateDict': optimizerResNet.state_dict(),
-            'optimizerRegressorStateDict':optimizerRegression.state_dict()}
+            'optimizerRegressorStateDict':optimizermodel.state_dict()}
     torch.save(state, path)
 
 def sanityCheckDepthMaps(grayImg, depthImg):

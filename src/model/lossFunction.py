@@ -38,8 +38,16 @@ class get_loss(torch.nn.Module):
         gtT = targetTransformT[:,:3,3].type(torch.float32)
 
         # Calculate euclidean norm to get the measure of deviation of transform with ground truth        
-        rotationLoss = torch.norm(torch.matmul(predRot.transpose(2,1), gtR) - moveToDevice(torch.eye(3),device),'fro')
+        rotationLoss = torch.empty(gtR.shape[0])
+        for batchno in range(0,gtR.shape[0]):
+            rotationLoss[batchno] = torch.norm(torch.matmul(predRot[batchno,:,:].transpose(1,0), gtR[batchno,:,:]) - moveToDevice(torch.eye(3),device),'fro')
+
+
         translationLoss = torch.norm(predTrans - gtT,'fro')
+        translationLoss = torch.empty(gtT.shape[0])
+        for batchno in range(0,gtT.shape[0]):
+            translationLoss[batchno] = torch.norm(predTrans[batchno,:] - gtT[batchno,:],'fro')
+        
 
         # Read the calibration parameters
         #calibFileRootDir = "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/2011_09_26/"
@@ -123,7 +131,6 @@ class get_loss(torch.nn.Module):
             return(totalLoss.type(torch.float32),manhattanDistanceLoss,rotationCorrectedDepthMap)
 
         else:
-            euclideanDistancePtCld = calculateEucledianDistOfPointClouds(torch.transpose(ptCloudTarget,2,1)[:,:,:3], torch.transpose(ptCloudPred,2,1)[:,:,:3], ptCldSize)
-            euclideanDistanceLoss = torch.mean(euclideanDistancePtCld)
-            totalLoss = euclideanDistanceLoss + translationLoss
-            return(totalLoss.type(torch.float32), euclideanDistanceLoss)
+            euclideanDistancePtCld = calculateManhattanDistOfPointClouds(torch.transpose(ptCloudTarget,2,1)[:,:,:3], torch.transpose(ptCloudPred,2,1)[:,:,:3], ptCldSize)
+            totalLoss = torch.mean(euclideanDistancePtCld) + torch.mean(translationLoss) + (5*torch.mean(rotationLoss))
+            return(totalLoss.type(torch.float32), torch.mean(euclideanDistancePtCld))
