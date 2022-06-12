@@ -105,8 +105,11 @@ intensity_maps_transformed_folder = savepath + "_sync/intensity_maps_transformed
 point_files = timestamp_sync(main_path)
 imgs_files = ns(glob.glob(main_path + "_sync/image_02/data/*.png"))
 
-angle_limit = 0.34722965035593395/1.25
-tr_limit = 0.34722965035593395/1.25
+#angle_limit = 0.34722965035593395/1.25
+#tr_limit = 0.34722965035593395/1.25
+
+angle_limit = 0.174532925199433/1.25
+tr_limit = 0.2/1.25
 
 angle_list = np.zeros((1,16), dtype = np.float32)
 maxPtCldSize = 0

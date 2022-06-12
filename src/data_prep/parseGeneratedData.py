@@ -11,7 +11,7 @@ args = parser.parse_args()
 dataset_path = args.path
 
 raw_path = os.path.join(dataset_path,'raw/2011_09_26/')
-processed_path = os.path.join(dataset_path,'processed/2011_09_26/')
+processed_path = os.path.join(dataset_path,'processed_20_10/2011_09_26/')
 
 current_dir = os.getcwd()
 
@@ -51,32 +51,37 @@ for fn in folder_names:
 
     min_val = min([file_names_source.shape[0], file_names_target.shape[0], file_intensity_source.shape[0], file_intensity_target.shape[0], img_source.shape[0], img_target.shape[0], point_src.shape[0]])
 
+    try:
+        dataset = np.hstack((file_names_source, file_names_target, file_intensity_source, file_intensity_target, img_source, img_target, point_src, transforms_list))
+        print(dataset.shape)
+        totalDataset+=dataset.shape[0]
 
-    dataset = np.hstack((file_names_source, file_names_target, file_intensity_source, file_intensity_target, img_source, img_target, point_src, transforms_list))
-    print(dataset.shape)
-    totalDataset+=dataset.shape[0]
+        dataset_array = np.vstack((dataset_array, dataset))
 
-    dataset_array = np.vstack((dataset_array, dataset))
+        #######################################################################################
 
-    #######################################################################################
+        file_names_source_2 = ns(glob.glob(os.path.join(processed_path,fn) + "depth_maps_transformed_2/*.png"))
+        file_names_target_2 = ns(glob.glob(os.path.join(processed_path,fn) + "depth_maps_2/*.png"))
+        file_intensity_source_2 = ns(glob.glob(os.path.join(processed_path,fn) + "intensity_maps_transformed_2/*.png"))
+        file_intensity_target_2 = ns(glob.glob(os.path.join(processed_path,fn) + "intensity_maps_2/*.png"))
 
-    file_names_source_2 = ns(glob.glob(os.path.join(processed_path,fn) + "depth_maps_transformed_2/*.png"))
-    file_names_target_2 = ns(glob.glob(os.path.join(processed_path,fn) + "depth_maps_2/*.png"))
-    file_intensity_source_2 = ns(glob.glob(os.path.join(processed_path,fn) + "intensity_maps_transformed_2/*.png"))
-    file_intensity_target_2 = ns(glob.glob(os.path.join(processed_path,fn) + "intensity_maps_2/*.png"))
+        transforms_list_2 = np.loadtxt(os.path.join(processed_path,fn) + "angle_list_2.txt", dtype = str)
 
-    transforms_list_2 = np.loadtxt(os.path.join(processed_path,fn) + "angle_list_2.txt", dtype = str)
+        file_names_source_2 = np.array(file_names_source_2, dtype=str).reshape(-1,1)
+        file_names_target_2 = np.array(file_names_target_2, dtype=str).reshape(-1,1)
+        file_intensity_source_2 = np.array(file_intensity_source_2, dtype=str).reshape(-1,1)
+        file_intensity_target_2 = np.array(file_intensity_target_2, dtype=str).reshape(-1,1)
 
-    file_names_source_2 = np.array(file_names_source_2, dtype=str).reshape(-1,1)
-    file_names_target_2 = np.array(file_names_target_2, dtype=str).reshape(-1,1)
-    file_intensity_source_2 = np.array(file_intensity_source_2, dtype=str).reshape(-1,1)
-    file_intensity_target_2 = np.array(file_intensity_target_2, dtype=str).reshape(-1,1)
+        dataset_2 = np.hstack((file_names_source_2, file_names_target_2, file_intensity_source_2, file_intensity_target_2, img_source, img_target,  point_src, transforms_list_2))
+        print(dataset_2.shape)
+        totalDataset+=dataset.shape[0]
 
-    dataset_2 = np.hstack((file_names_source_2, file_names_target_2, file_intensity_source_2, file_intensity_target_2, img_source, img_target,  point_src, transforms_list_2))
-    print(dataset_2.shape)
-    totalDataset+=dataset.shape[0]
+        dataset_array_2 = np.vstack((dataset_array_2, dataset_2))
+    
+    except ValueError:
+        print("the no of points arent equal to the no of images")
 
-    dataset_array_2 = np.vstack((dataset_array_2, dataset_2))
+
 
 
 

@@ -28,7 +28,7 @@
             "program": "${workspaceFolder}/src/data_prep/decalibration.py",
             "console": "integratedTerminal",
             "args": [
-                "/home/akshay/5TB-HDD/Datasets/kitti/"
+                "/mnt/data/akshay/kitti/"
             ]
         },
         {
@@ -65,7 +65,7 @@
             "program": "${workspaceFolder}/src/data_prep/createDataset.py",
             "console": "integratedTerminal",
             "args": [
-                "/home/akshay/5TB-HDD/Datasets/kitti/raw/2011_09_26"
+                "/mnt/data/akshay/kitti/raw/2011_09_26"
             ]
         },
         {
@@ -75,7 +75,7 @@
             "program": "${workspaceFolder}/src/data_prep/parseGeneratedData.py",
             "console": "integratedTerminal",
             "args": [
-                "/home/akshay/5TB-HDD/Datasets/kitti/"
+                "/mnt/data/akshay/kitti/"
             ]
         },
         {

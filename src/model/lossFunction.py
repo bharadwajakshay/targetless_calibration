@@ -126,4 +126,4 @@ class get_loss(torch.nn.Module):
             euclideanDistancePtCld = calculateEucledianDistOfPointClouds(torch.transpose(ptCloudTarget,2,1)[:,:,:3], torch.transpose(ptCloudPred,2,1)[:,:,:3], ptCldSize)
             euclideanDistanceLoss = torch.mean(euclideanDistancePtCld)
             totalLoss = euclideanDistanceLoss + translationLoss
-            return(totalLoss.type(torch.float32))
+            return(totalLoss.type(torch.float32), euclideanDistanceLoss)

@@ -9,11 +9,11 @@ import subprocess
 
 def runPrograms(path):
     print('Running the params')
-    cmd = 'python /home/akshay/targetless_calibration/src/data_prep/datasetBuilderColor.py '+path
+    cmd = 'python /home/akshay/pytorchEnv/targetless_calibration/src/data_prep/datasetBuilderColor.py '+path
     Process1 = subprocess.Popen(cmd, shell=True)
     Process1.wait()
 
-    cmd = 'python /home/akshay/targetless_calibration/src/data_prep/datasetBuilderColor2.py '+path
+    cmd = 'python /home/akshay/pytorchEnv/targetless_calibration/src/data_prep/datasetBuilderColor2.py '+path
     Process2 = subprocess.Popen(cmd, shell=True)
     Process2.wait()
 

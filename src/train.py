@@ -7,6 +7,7 @@ import sys
 import importlib
 import shutil
 import json
+import time
 from data_prep.dataLoader import *
 import importlib
 from pathlib import Path
@@ -34,7 +35,7 @@ sys.path.append(os.path.join(ROOT_DIR, 'model'))
 modelPath = '/home/akshay/targetless_calibration/src/model/trained/bestTargetCalibrationModel.pth'
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0,1,2'
 
 _Debug = False
 
@@ -234,6 +235,7 @@ def main():
         
             # Expand the data into its respective components
             srcClrT, srcDepthT, __, ptCldT, ptCldSize, targetTransformT, options = data
+            #print(f'time taken to read the data is {timeInstance.toc()}')
             
             optimizerResNET.zero_grad()
             optimizerRegression.zero_grad()
@@ -280,8 +282,10 @@ def main():
             # Move the regressor model to Cuda 0 and pass the concatinated Feature Vector
             predTransform  = regressor_model(aggClrDepthFeatureMap,True)
 
-            # Move the loss Function to Cuda 0          
-            loss, manhattanDist = loss_function(predTransform, srcClrT, srcDepthT, ptCldT, ptCldSize, targetTransformT, config.calibrationDir, 1)
+            # Move the loss Function to Cuda 0    
+            #timeInstance.tic()      
+            loss, manhattanDist = loss_function(predTransform, srcClrT, srcDepthT, ptCldT, ptCldSize, targetTransformT, config.calibrationDir, 1, None )
+            #print(f'time taken to calculate loss is {timeInstance.toc()}')
 
             loss.backward()
 
