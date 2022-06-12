@@ -135,8 +135,8 @@ def main():
     TRAIN_DATASET = dataLoader(config.trainingDataFile, maxPtCldSize,mode='train')
     TEST_DATASET = dataLoader(config.trainingDataFile, maxPtCldSize,mode='test')
 
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=0)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=0)
+    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=8,drop_last=True)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=12,drop_last=True)
     #MODEL = importlib.import_module(pointcloudnet)
 
     

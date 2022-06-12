@@ -16,7 +16,7 @@ logsDirs = "/home/akshay/pytorchEnv/targetless_calibration/logs/"
 calibrationDir = "/mnt/data/akshay/kitti/raw/2011_09_26/"
 
 training = dict(
-    batchSize = 24,
+    batchSize = 12,
     epoch = 35,
     learningRate = 0.0003,
     beta0 = 0.9,
