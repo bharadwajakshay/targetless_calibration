@@ -735,6 +735,8 @@ class SWIN(nn.Module):
                                                  nn.LeakyReLU(negative_slope=0.2, inplace=True),
                                                  nn.Conv2d(embed_dim // 4, embed_dim, 3, 1, 1))
 
+        self.conv_before_upsample = nn.Sequential(nn.Conv2d(embed_dim, num_feat, 3, 1, 1),
+                                                      nn.LeakyReLU(inplace=True))
 
         '''
             Disabling reconstruction  as reconstruction is not needed
@@ -829,18 +831,20 @@ class SWIN(nn.Module):
             x = self.conv_first(x)
             x = self.conv_after_body(self.forward_features(x)) + x
             x = self.conv_before_upsample(x)
+
+            '''
+            
             x = self.lrelu(self.conv_up1(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
             x = self.lrelu(self.conv_up2(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
             x = self.conv_last(self.lrelu(self.conv_hr(x)))
+            '''
         else:
             # for image denoising and JPEG compression artifact reduction
             x_first = self.conv_first(x)
             res = self.conv_after_body(self.forward_features(x_first)) + x_first
             x = x + self.conv_last(res)
 
-        x = x / self.img_range + self.mean
-
-        return x[:, :, :H*self.upscale, :W*self.upscale]
+        return x
 
     def flops(self):
         flops = 0

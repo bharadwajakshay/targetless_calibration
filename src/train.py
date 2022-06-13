@@ -115,9 +115,9 @@ def main():
     model = onlineCalibration(backbone='SWIN')
     if torch.cuda.is_available():
         device = 'cuda'
-        if torch.cuda.device_count() > 1:
-            print('Multiple GPUs found. Moving to Dataparallel approach')
-            model = torch.nn.DataParallel(model)
+        #if torch.cuda.device_count() > 1:
+        #    print('Multiple GPUs found. Moving to Dataparallel approach')
+        #    model = torch.nn.DataParallel(model)
     else: 
         device = 'cpu'
 

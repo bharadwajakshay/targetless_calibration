@@ -17,10 +17,10 @@ class onlineCalibration(nn.Module):
         elif backbone == 'SWIN':
             self.modelClrImg = SWIN(upscale=None, in_chans=3, img_size=64, window_size=8,
                     img_range=1., depths=[6, 6, 6, 6], embed_dim=60, num_heads=[6, 6, 6, 6],
-                    mlp_ratio=2, upsampler='pixelshuffledirect', resi_connection='1conv')
+                    mlp_ratio=2, upsampler='nearest+conv', resi_connection='1conv')
             self.modelDepthImg = SWIN(upscale=None, in_chans=3, img_size=64, window_size=8,
                     img_range=1., depths=[6, 6, 6, 6], embed_dim=60, num_heads=[6, 6, 6, 6],
-                    mlp_ratio=2, upsampler='pixelshuffledirect', resi_connection='1conv')
+                    mlp_ratio=2, upsampler='nearest+conv', resi_connection='1conv')
 
         self.regressor_model = regressor.regressor().to('cuda')
 
@@ -30,7 +30,7 @@ class onlineCalibration(nn.Module):
 
     def forward(self, clrImg, depthImg):
         with torch.no_grad():
-            clrFeatureMap = self. modelClrImg(clrImg)
+            clrFeatureMap = self.modelClrImg(clrImg)
 
         maxPooledDepthImg = self.maxPool(depthImg)
         depthFeatureMap = self.modelDepthImg(maxPooledDepthImg)
