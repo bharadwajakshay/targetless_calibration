@@ -100,7 +100,7 @@ def main():
 
     # Path to Pretrained models
     modelPath = config.pathToPretrainedModel
-    if not os.path.exists(modelPath):
+    if not os.path.exists('/'.join(modelPath.split('/')[:-1])):
         os.makedirs('/'.join(modelPath.split('/')[:-1]))
 
 
@@ -179,6 +179,7 @@ def main():
         try:
             model_weights = torch.load(modelPath)
             model.load_state_dict(model_weights['modelStateDict'])
+            global_epoch = model_weights['epoch']
         except:
             print("Failed to load the model. Continuting without loading weights")
 
@@ -233,33 +234,7 @@ def main():
             loss.backward()
             manhattanDistArray = np.append(manhattanDistArray,manhattanDist.to('cpu').detach().numpy()) 
 
-        # Debug
-        if _Debug:
-            summary(resnetClrImg)
-            summary(resnetDepthImg)
-            summary(regressor_model)   
-
-
-            f = open("prestep.txt",'w')
-            for name, param in regressor_model.named_parameters():
-                if param.requires_grad:
-                    f.write(name)
-                    f.write(str(param.data.to('cpu').numpy()))
-                    f.write('\n')
-            f.close()
-
-        optimizermodel.step()
-
-        # Debug
-        if _Debug:
-            f = open("postStep.txt",'w')
-            for name, param in regressor_model.named_parameters():
-                if param.requires_grad:
-                    f.write(name)
-                    f.write(str(param.data.to('cpu').numpy()))
-                    f.write('\n')
-            f.close()
-
+        #
         global_step += 1
 
         
@@ -290,14 +265,16 @@ def main():
             # Increment the model not bettering count
             modelNotChangingCount += 1
 
-            if (simpleDistanceSE3 <  simpleDistanceSE3Err):
+            global_epoch += 1
 
-                simpleDistanceSE3Err = simpleDistanceSE3
+            if (np.mean(simpleDistanceSE3) <  simpleDistanceSE3Err):
+
+                simpleDistanceSE3Err = np.mean(simpleDistanceSE3)
                 saveModelParams(model, optimizermodel, global_epoch, modelPath)
                 modelNotChangingCount = 0
         
         schedulerModel.step()
-        global_epoch += 1
+        
 
 
         if global_epoch == config.training['epoch']:

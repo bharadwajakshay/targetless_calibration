@@ -18,6 +18,7 @@ class onlineCalibration(nn.Module):
 
     def forward(self, clrImg, depthImg):
         with torch.no_grad():
+            self.resnetClrImg = self.resnetClrImg.eval()
             clrFeatureMap = self.resnetClrImg(clrImg)
 
         maxPooledDepthImg = self.maxPool(depthImg)

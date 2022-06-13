@@ -316,7 +316,7 @@ def calculateManhattanDistOfPointClouds(PtCld0, PtCld1, ptCldSize):
             + torch.abs(PtCld1[channel,:ptCldSize[channel],1] - PtCld0[channel,:ptCldSize[channel],1]) \
             + torch.abs(PtCld1[channel,:ptCldSize[channel],2] - PtCld0[channel,:ptCldSize[channel],2])
 
-        meanManhattanDist[channel,:] = torch.max(D)
+        meanManhattanDist[channel,:] = torch.mean(D)
    
 
     return(meanManhattanDist)
@@ -353,7 +353,7 @@ def getGroundTruthPointCloud(ptCloud, P_rect, R_rect, RT):
     # Corecting for RT
     # Pt Cld Diemensions needed for the multiplication C[4xN]
     RT = moveToDevice(RT, ptCloud.get_device())
-    ptCloud = torch.matmul(RT, torch.transpose(ptCloud, 2,1))
+    ptCloud = torch.matmul(RT.double(), torch.transpose(ptCloud.double(), 2,1))
 
     # Correcting for rotation cam R00 
     R_rect = moveToDevice(R_rect, ptCloud.get_device()) 
