@@ -100,7 +100,7 @@ def main():
 
     # Path to Pretrained models
     modelPath = config.pathToPretrainedModel
-    if not os.path.exists(modelPath):
+    if not os.path.exists('/'.join(modelPath.split('/')[:-1])):
         os.makedirs('/'.join(modelPath.split('/')[:-1]))
 
 
@@ -112,7 +112,7 @@ def main():
     torch.cuda.empty_cache()
 
     # Call the main model which includes all the other models
-    model = onlineCalibration()
+    model = onlineCalibration(backbone='SWIN')
     if torch.cuda.is_available():
         device = 'cuda'
         if torch.cuda.device_count() > 1:
