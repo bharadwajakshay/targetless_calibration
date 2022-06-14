@@ -112,12 +112,12 @@ def main():
     torch.cuda.empty_cache()
 
     # Call the main model which includes all the other models
-    model = onlineCalibration(backbone='SWIN')
+    model = onlineCalibration()
     if torch.cuda.is_available():
         device = 'cuda'
-        #if torch.cuda.device_count() > 1:
-        #    print('Multiple GPUs found. Moving to Dataparallel approach')
-        #    model = torch.nn.DataParallel(model)
+        if torch.cuda.device_count() > 1:
+            print('Multiple GPUs found. Moving to Dataparallel approach')
+            model = torch.nn.DataParallel(model)
     else: 
         device = 'cpu'
 
@@ -212,7 +212,8 @@ def main():
 
         timeInstance.tic()
         for batch_no, data in tqdm(enumerate(trainDataLoader,0), total=len(trainDataLoader), smoothing=0.9):
-        
+            
+            optimizermodel.zero_grad()
             # Expand the data into its respective components
             srcClrT, srcDepthT, __, ptCldT, ptCldSize, targetTransformT, options = data
             #print(f'time taken to read the data is {timeInstance.toc()}')
@@ -231,34 +232,9 @@ def main():
             #print(f'time taken to calculate loss is {timeInstance.toc()}')
 
             loss.backward()
+            optimizermodel.step()
             manhattanDistArray = np.append(manhattanDistArray,manhattanDist.to('cpu').detach().numpy()) 
 
-        # Debug
-        if _Debug:
-            summary(resnetClrImg)
-            summary(resnetDepthImg)
-            summary(regressor_model)   
-
-
-            f = open("prestep.txt",'w')
-            for name, param in regressor_model.named_parameters():
-                if param.requires_grad:
-                    f.write(name)
-                    f.write(str(param.data.to('cpu').numpy()))
-                    f.write('\n')
-            f.close()
-
-        optimizermodel.step()
-
-        # Debug
-        if _Debug:
-            f = open("postStep.txt",'w')
-            for name, param in regressor_model.named_parameters():
-                if param.requires_grad:
-                    f.write(name)
-                    f.write(str(param.data.to('cpu').numpy()))
-                    f.write('\n')
-            f.close()
 
         global_step += 1
 
@@ -272,6 +248,7 @@ def main():
 
 
         with torch.no_grad():
+            model = model.eval()
             simpleDistanceSE3, errorInAngles, errorInTranslation = test(model, testDataLoader)
 
             print("Calculated mean Errors:" +  str(np.mean(simpleDistanceSE3)))
@@ -290,14 +267,15 @@ def main():
             # Increment the model not bettering count
             modelNotChangingCount += 1
 
-            if (simpleDistanceSE3 <  simpleDistanceSE3Err):
+            global_epoch += 1
+            if (np.mean(simpleDistanceSE3) <  simpleDistanceSE3Err):
 
-                simpleDistanceSE3Err = simpleDistanceSE3
+                simpleDistanceSE3Err = np.mean(simpleDistanceSE3)
                 saveModelParams(model, optimizermodel, global_epoch, modelPath)
                 modelNotChangingCount = 0
         
         schedulerModel.step()
-        global_epoch += 1
+        
 
 
         if global_epoch == config.training['epoch']:
