@@ -115,9 +115,9 @@ def main():
     model = onlineCalibration()
     if torch.cuda.is_available():
         device = 'cuda'
-        if torch.cuda.device_count() > 1:
-            print('Multiple GPUs found. Moving to Dataparallel approach')
-            model = torch.nn.DataParallel(model)
+#        if torch.cuda.device_count() > 1:
+#            print('Multiple GPUs found. Moving to Dataparallel approach')
+#            model = torch.nn.DataParallel(model)
     else: 
         device = 'cpu'
 
@@ -213,7 +213,9 @@ def main():
 
         timeInstance.tic()
         for batch_no, data in tqdm(enumerate(trainDataLoader,0), total=len(trainDataLoader), smoothing=0.9):
-        
+
+            optimizermodel.zero_grad()
+            
             # Expand the data into its respective components
             srcClrT, srcDepthT, __, ptCldT, ptCldSize, targetTransformT, options = data
             #print(f'time taken to read the data is {timeInstance.toc()}')
@@ -232,6 +234,7 @@ def main():
             #print(f'time taken to calculate loss is {timeInstance.toc()}')
 
             loss.backward()
+            optimizermodel.step()
             manhattanDistArray = np.append(manhattanDistArray,manhattanDist.to('cpu').detach().numpy()) 
 
         #
