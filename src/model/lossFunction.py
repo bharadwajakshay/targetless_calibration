@@ -76,7 +76,8 @@ class get_loss(torch.nn.Module):
 
         ptCloudPred = torch.matmul(predTransform, torch.transpose(ptCloudBaseHomo,2,1))
 
-      
+
         euclideanDistancePtCld = calculateManhattanDistOfPointClouds(torch.transpose(ptCloudTarget,2,1)[:,:,:3], torch.transpose(ptCloudPred,2,1)[:,:,:3], ptCldSize)
         totalLoss = torch.mean(euclideanDistancePtCld) + (1.5*torch.mean(translationLoss)) + (2*torch.mean(rotationLoss))
+        
         return(totalLoss.type(torch.float32), torch.mean(euclideanDistancePtCld))

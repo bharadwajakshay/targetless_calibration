@@ -19,6 +19,9 @@ calibrationDir = "/mnt/data/akshay/kitti/raw/2011_09_26/"
 training = dict(
     batchSize = 8,
     epoch = 35,
+    # Batchsize for larger GPUs (A6000)
+    #batchSize = 40,
+    #epoch = 50,
     learningRate = 0.00003,
     beta0 = 0.9,
     beta1 = 0.999,

@@ -115,9 +115,9 @@ def main():
     model = onlineCalibration()
     if torch.cuda.is_available():
         device = 'cuda'
-        if torch.cuda.device_count() > 1:
-            print('Multiple GPUs found. Moving to Dataparallel approach')
-            model = torch.nn.DataParallel(model)
+#        if torch.cuda.device_count() > 1:
+#            print('Multiple GPUs found. Moving to Dataparallel approach')
+#            model = torch.nn.DataParallel(model)
     else: 
         device = 'cpu'
 
@@ -179,6 +179,7 @@ def main():
         try:
             model_weights = torch.load(modelPath)
             model.load_state_dict(model_weights['modelStateDict'])
+            global_epoch = model_weights['epoch']
         except:
             print("Failed to load the model. Continuting without loading weights")
 
@@ -234,7 +235,6 @@ def main():
             loss.backward()
             optimizermodel.step()
             manhattanDistArray = np.append(manhattanDistArray,manhattanDist.to('cpu').detach().numpy()) 
-
 
         global_step += 1
 
