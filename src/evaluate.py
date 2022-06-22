@@ -192,7 +192,7 @@ def main():
     np.save(os.path.join(logsDirsEvaluate,'ErrorInAngles.npy'), angularErr)
     np.save(os.path.join(logsDirsEvaluate,'ErrorInTranslation.npy'), translationErr)
 
-    logsDirsEvaluate.close()
+    logFileEvaluation.close()
             
 
 if __name__ == "__main__":
