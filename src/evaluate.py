@@ -1,3 +1,4 @@
+from sklearn.metrics import euclidean_distances
 import torch
 from model.onlineCalibration import onlineCalibration
 from model.resnet import *
@@ -19,7 +20,7 @@ from model.lossFunction import get_loss
 import concurrent.futures
 from common.utilities import *
 from common.pytorch3D import *
-from common.tensorTools import saveModelParams
+from common.tensorTools import saveModelParams, euclideanAngularDist
 
 from torchvision import transforms
 from model.transformsTensor import *
@@ -51,6 +52,9 @@ def evaluate(model, dataLoader):
     translationError = np.empty((3,len(dataLoader)),dtype=float)
     s3DistanceError = np.empty((1,len(dataLoader)),dtype=float)
     timeConsumption = np.empty((1,len(dataLoader)),dtype=float)
+    euclideanDistErr = np.empty((1,len(dataLoader)),dtype=float)
+    euclideanAngularErr = np.empty((1,len(dataLoader)),dtype=float)
+
   
 
     for j, data in tqdm(enumerate(dataLoader,0), total=len(dataLoader)):
@@ -95,8 +99,10 @@ def evaluate(model, dataLoader):
         eulerAngleErrors[:,j] = torch.rad2deg(torch.mean(errorEulerAngle,dim=0)).to('cpu').numpy()
         errorTranslation = torch.abs(gtT - predT)
         translationError[:,j] = torch.mean(errorTranslation,dim=0).to('cpu').numpy()
+        euclideanDistErr[:,j] = torch.norm(gtT - predT,2).to('cpu').numpy()
+        euclideanAngularErr[:,j] = torch.rad2deg(euclideanAngularDist(targetEulerAngles, predEulerAngles)).to('cpu').numpy()
         
-    return(s3DistanceError, eulerAngleErrors, translationError, timeConsumption)
+    return(s3DistanceError, eulerAngleErrors, translationError, timeConsumption, euclideanDistErr, euclideanAngularErr)
 
 
 def main():
@@ -171,12 +177,15 @@ def main():
 
     with torch.no_grad():
         model=model.eval()
-        simpleDistanceSE3, errorInAngles, errorInTranslation, executionTime = evaluate(model, evaluateDataLoader)
+        simpleDistanceSE3, errorInAngles, errorInTranslation, executionTime, euclideanDistErr, euclideanAngularErr = evaluate(model, evaluateDataLoader)
 
         print("Calculated mean Errors:" +  str(np.mean(simpleDistanceSE3))+"\t Standard Deviation:"+str(np.std(simpleDistanceSE3)))
         print("Mean Angular Error: "+str(np.mean(errorInAngles,axis=1))+"\t Standard Deviation:"+str(np.std(errorInAngles,axis=1)))
         print("Mean Translation Error: "+str(np.mean(errorInTranslation,axis=1))+"\t Standard Deviation:"+str(np.std(errorInTranslation,axis=1)))
         print("Mean Execution Time: "+str(np.mean(executionTime,axis=1))+"\t Standard Deviation:"+str(np.std(executionTime)))
+        print("Mean Euclidean Distance Error: "+str(np.mean(euclideanDistErr,axis=1))+"\t Standard Deviation:"+str(np.std(euclideanDistErr)))
+        print("Mean Euclidean Angular Error: "+str(np.mean(euclideanAngularErr,axis=1))+"\t Standard Deviation:"+str(np.std(euclideanAngularErr)))
+
 
         logFileEvaluation.write("Calculated mean SE3 Errors: "+  str(np.mean(simpleDistanceSE3)))
         logFileEvaluation.write("Mean Angular Error: "+str(np.mean(errorInAngles,axis=1)))
