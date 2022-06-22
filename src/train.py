@@ -112,7 +112,7 @@ def main():
     torch.cuda.empty_cache()
 
     # Call the main model which includes all the other models
-    model = onlineCalibration()
+    model = onlineCalibration(config.backbone, depth=config.networkDepth)
     if torch.cuda.is_available():
         device = 'cuda'
 #        if torch.cuda.device_count() > 1:

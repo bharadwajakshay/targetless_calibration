@@ -6,10 +6,11 @@ from model import regressor
 from model.swin import SWIN
 
 class onlineCalibration(nn.Module):
-    def __init__(self,backbone="RESNET"):
+    def __init__(self,backbone="RESNET", depth='shallow'):
         super(onlineCalibration,self).__init__()
 
         self.backbone = backbone
+        self.depth = depth
 
         if backbone == 'RESNET':
             self.modelClrImg = resnet50(pretrained=True).to('cuda')
@@ -22,7 +23,7 @@ class onlineCalibration(nn.Module):
                     img_range=1., depths=[6, 6, 6, 6], embed_dim=60, num_heads=[6, 6, 6, 6],
                     mlp_ratio=2, upsampler='nearest+conv', resi_connection='1conv')
 
-        self.regressor_model = regressor.regressor().to('cuda')
+        self.regressor_model = regressor.regressor(backbone=self.backbone, depth=self.depth).to('cuda')
 
         # define max pooling layer
         self.maxPool = torch.nn.MaxPool2d(5, stride=1)
