@@ -14,6 +14,10 @@ imageio = "*"
 matplotlib = "*"
 tfrecord = "*"
 natsort = "*"
+timm = "*"
+open3d = "*"
+torch-summary = "*"
+pytictoc = "*"
 
 [dev-packages]
 
