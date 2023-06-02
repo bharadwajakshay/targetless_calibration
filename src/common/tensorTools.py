@@ -4,6 +4,7 @@ from common.pytorch3D import *
 import numpy as np
 from data_prep.helperfunctions import *
 import cv2
+import math
 
 def moveToDevice(tensor, device):
     # if device = -1 then it means its on CPU
@@ -498,3 +499,9 @@ def convertImageTensorToCV(imageT):
         '''
     return(imgs)
 
+
+def estimateAngleDistance(angleA, AngleB):
+    return(torch.min(torch.tensor([torch.abs(angleA-AngleB),(2*math.pi)-torch.abs(angleA-AngleB)])))
+
+def euclideanAngularDist(estA,gA):
+    return torch.sqrt(torch.pow(estimateAngleDistance(estA[0][0],gA[0][0]),2) + torch.pow(torch.abs(torch.cos(estA[0][1]) - torch.cos(gA[0][1])),2) + torch.pow(estimateAngleDistance(estA[0][2],gA[0][2]),2))

@@ -69,4 +69,7 @@ def readcamtocamcalibrationdata(path_to_file, mode='02'):
                 R_ = np.hstack((R_,np.zeros((R_.shape[0],1))))
                 R_[3][3] = 1
 
-    return [P_, R_]
+            if key == ('K_' + mode):
+                K_ = np.fromstring(val, sep=' ')
+                K_ = K_.reshape(3, 3)
+    return [P_, R_, K_]
