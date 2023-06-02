@@ -1,13 +1,6 @@
 {
     "configurations": [
         {
-            "name": "Python: Train VAE",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/trainVAE.py",
-            "console": "integratedTerminal"
-        },
-        {
             "name": "Python: Test Data Loader",
             "type": "python",
             "request": "launch",
@@ -65,7 +58,8 @@
             "program": "${workspaceFolder}/src/data_prep/createDataset.py",
             "console": "integratedTerminal",
             "args": [
-                "/mnt/data/akshay/kitti/raw/2011_09_26"
+                "/mnt/data/akshay/kitti/raw/2011_09_26",
+                "/mnt/data/akshay/kitti/processed/2011_09_26"
             ]
         },
         {
