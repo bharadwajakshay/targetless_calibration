@@ -7,6 +7,7 @@ from PIL import Image, ImageOps
 import cv2
 import math
 import open3d as o3d
+import json
 
 from torchvision import transforms
 
@@ -19,9 +20,6 @@ def getNormals(ptCld):
     normals = np.asarray(pcd.normals)
     print('BreakPoint')
     return(normals)
-
-
-
 
 def normalizePtCld(pointcloud):
     centroid = np.mean(pointcloud, axis=0)
@@ -36,6 +34,7 @@ def readimgfromfileCV2(path_to_file):
 
 def readimgfromfilePIL(path_to_file):
     image = Image.open(path_to_file)
+    image = image.convert('RGB')
     return(image.width,image.height,image)
 
 def readvelodynepointcloud(path_to_file):
@@ -44,11 +43,11 @@ def readvelodynepointcloud(path_to_file):
     So to read the file, we use the inbuilt fuction form the np array to rad from the file
     '''
 
-    pointcloud = np.fromfile(path_to_file, dtype=np.float32).reshape(-1, 4)
-    intensity_data = pointcloud[:,3]
+    pointcloud = np.fromfile(path_to_file, dtype=np.float32).reshape(4,-1)
+    intensity_data = pointcloud[3,:]
     
     # Return points ignoring the reflectivity 
-    return(pointcloud[:,:3], intensity_data)
+    return(pointcloud[:3,:], intensity_data)
 
 def resizeImgForResNet(image):
     # Since resnet is trainted to take in 224x224, we want resize the image of the shortest size to be 224
@@ -81,27 +80,31 @@ def normalizePILImg(image):
 
 class dataLoader(Dataset):
 
-    def __init__ (self, filename, maxPtCldSize, mode='train'):
+    def __init__ (self, filename,  mode='train'):
         self.datafile = filename
-        file_descriptor = open(self.datafile,'r')
-        #self.data = json.load(file_descriptor)
-        self.data = file_descriptor.readlines()
+        with open(self.datafile,'r') as jsonFile:
+            self.data = json.load(jsonFile)
 
-        # Read the longest point cloud 
-        self.maxPtCldSize = maxPtCldSize
+        self.dataList = []
 
-        """
-        # remove the last entry as It is not needed any more
-        self.data = self.data[:-1]
-        """
+        for keys in list(self.data.keys()):
+            for scenes in  list(self.data[keys].keys()):
+                self.dataList.append(self.data[keys][scenes])
+
+        trainIdx = int(len(self.dataList)*0.8)
+        testIdx = int(len(self.dataList)*0.9)
+
+
+
         if mode =='train':
-            self.data = self.data[:24000]
-            #self.data = self.data[:240]
+
+            self.data = self.dataList[:trainIdx]
+           
         if mode =='test':
-            self.data = self.data[24000:28500]
-            #self.data = self.data[24000:24500]
+            self.data = self.dataList[trainIdx:testIdx]
+       
         if mode =='evaluate':
-            self.data = self.data[29000:]
+            self.data = self.dataList[testIdx:]
 
     def __len__(self):
         return(len(self.data))
@@ -131,33 +134,30 @@ class dataLoader(Dataset):
         ])
 
 
-        lineString = str(self.data[key]).split(' ')
+        sample = self.dataList[key]
 
         # Read from the file
-        srcDepthImageFileName = lineString[0]
-        targetDepthImageFileName = lineString[1] 
-        srcIntensityImageFileName = lineString[2]
-        targetIntensityImageFileName = lineString[3] 
-        srcColorImageFileName = lineString[4]
-        targetColorImageFileName = lineString[5]
-        pointCldFileName = lineString[6]
-        transform = np.array(lineString[7:]).astype(float).reshape(4,4)
+        srcDepthImageFileName = sample['depth image filename']
+
+        srcIntensityImageFileName = sample['intensity image filename']
+
+        srcColorImageFileName = sample['image filename']
+
+        gtPointCldFileName = sample['points in camera frame']
+
+        misalignedPtCldFileName = sample['mis-aligned points']
+
+        transform = np.asarray(sample['transfromation'])
 
         __, __, srcDepthImg = readimgfromfilePIL(srcDepthImageFileName)
         #srcDepthImg = normalizePILGrayImg(srcDepthImg) # Bring it to the range of [0,1]
         srcDepthImg = imgTensorPreProc(srcDepthImg)
 
-        __, __, tgtDepthImg = readimgfromfilePIL(targetDepthImageFileName)
-        #srcDepthImg = normalizePILGrayImg(srcDepthImg) # Bring it to the range of [0,1]
-        tgtDepthImg = imgTensorPreProc(tgtDepthImg)
 
         __, __, srcIntensityImg = readimgfromfilePIL(srcIntensityImageFileName)
         #srcIntensityImg = normalizePILGrayImg(srcIntensityImg) # Bring it to the range of [0,1]
         srcIntensityImg = imgTensorPreProc(srcIntensityImg)
 
-        __, __, tgtIntensityImg = readimgfromfilePIL(targetIntensityImageFileName)
-        #srcIntensityImg = normalizePILGrayImg(srcIntensityImg) # Bring it to the range of [0,1]
-        tgtIntensityImg = imgTensorPreProc(tgtIntensityImg)
 
         __, __, srcClrImg = readimgfromfilePIL(srcColorImageFileName)
         colorImage = np.array(srcClrImg)
@@ -165,30 +165,21 @@ class dataLoader(Dataset):
         srcClrImg = imgTensorPreProc(srcClrImg)
 
         # read the point cloud 
-        ptCld, intensityValues = readvelodynepointcloud(pointCldFileName)
-        intensityValues = intensityValues.reshape(intensityValues.shape[0],1)
-        ptcldSize = ptCld.shape[0]
-        
-        if ptCld.shape[0] < self.maxPtCldSize :
-            # Pad the point cloud with 0
-            paddingValuesPtCld = np.zeros((self.maxPtCldSize - ptCld.shape[0], ptCld.shape[1]))
-            ptCld = np.vstack((ptCld,paddingValuesPtCld))
+        gtPtCld, gtIntensityValues = readvelodynepointcloud(gtPointCldFileName)
 
-            # Padding values for intensity 
-            paddingValuesIntesnity = np.zeros((self.maxPtCldSize - intensityValues.shape[0], 1))
-            intensityValues = np.vstack((intensityValues,paddingValuesIntesnity))
+        misalignedPtCld, misalignedIntensityValues = readvelodynepointcloud(gtPointCldFileName)
+
+
+        intensityValues = intensityValues.reshape(intensityValues.shape[0],1)
         
-        # Combine the point Cloud with intensity data
-        ptCld = np.hstack((ptCld,intensityValues))
 
         #normals = getNormals(ptCld[:,:3])
 
         # Combine Depth information with intensity information on another channel
         srcDepthImg[2,:,:] = srcIntensityImg[0,:,:]
-        tgtDepthImg[2,:,:] = tgtIntensityImg[0,:,:]
 
 
-        return (srcClrImg, srcDepthImg, tgtDepthImg, ptCld, ptcldSize, transform,[colorImage])
+        return (srcClrImg, srcDepthImg, transform, gtPtCld, misalignedPtCld, [colorImage])
 
 
 if __name__ == "__main__":

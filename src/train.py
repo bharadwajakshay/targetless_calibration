@@ -125,18 +125,13 @@ def main():
 
     # get th eloss fucntion
     loss_function = get_loss().to(device)
-
-    # Get the max point cloud size
-    file = open(config.maxPtCldSizeFile,'r')
-    maxPtCldSize = int(file.read())
-    file.close()
-
+    
     # Hyper Parameters 
-    TRAIN_DATASET = dataLoader(config.trainingDataFile, maxPtCldSize,mode='train')
-    TEST_DATASET = dataLoader(config.trainingDataFile, maxPtCldSize,mode='test')
+    TRAIN_DATASET = dataLoader(config.trainingDataFile, mode='train')
+    TEST_DATASET = dataLoader(config.trainingDataFile, mode='test')
 
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=8,drop_last=True)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=12,drop_last=True)
+    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=0,drop_last=True)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=0,drop_last=True)
     #MODEL = importlib.import_module(pointcloudnet)
 
     
