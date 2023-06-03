@@ -307,17 +307,17 @@ def calculateEucledianDistOfPointClouds(PtCld0, PtCld1, ptCldSize):
 
     return(meanEucledianDist)
 
-def calculateManhattanDistOfPointClouds(PtCld0, PtCld1, ptCldSize):
+def calculateManhattanDistOfPointClouds(PtCld0, PtCld1):
 
     # Claculate the mean euclidean distance between each point point cloud
     meanManhattanDist = torch.empty(PtCld0.shape[0],1)
-    for channel in range(0,PtCld0.shape[0]):
+    for batch in range(0,PtCld0.shape[0]):
 
-        D = torch.abs(PtCld1[channel,:ptCldSize[channel],0] - PtCld0[channel,:ptCldSize[channel],0]) \
-            + torch.abs(PtCld1[channel,:ptCldSize[channel],1] - PtCld0[channel,:ptCldSize[channel],1]) \
-            + torch.abs(PtCld1[channel,:ptCldSize[channel],2] - PtCld0[channel,:ptCldSize[channel],2])
+        D = torch.abs(PtCld1[batch,:,0] - PtCld0[batch,:,0]) \
+            + torch.abs(PtCld1[batch,:,1] - PtCld0[batch,:,1]) \
+            + torch.abs(PtCld1[batch,:,2] - PtCld0[batch,:,2])
 
-        meanManhattanDist[channel,:] = torch.mean(D)
+        meanManhattanDist[batch,:] = torch.mean(D)
    
 
     return(meanManhattanDist)
@@ -367,6 +367,21 @@ def getGroundTruthPointCloud(ptCloud, P_rect, R_rect, RT):
     ptCloud = torch.transpose(ptCloud,2,1)
 
     return(ptCloud)
+
+def applyTransformationOnTensor(ptCloud, transform):
+    assert transform.shape[1] == 4
+    assert transform.shape[2] == 4
+    assert ptCloud.shape[2] == 3
+
+    points = torch.dot(transform[:,:3,:3],torch.transpose(ptCloud,2,1))
+
+    for axis in range(3):
+        points[:,axis,:] = points[:,axis,:] + transform[:,axis,3]
+
+    return points
+
+
+
     
 
 def saveModelParams(model, optimizermodel, epoch, path):
