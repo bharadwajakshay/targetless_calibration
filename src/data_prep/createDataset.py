@@ -185,6 +185,23 @@ def getIntensityImages(points, rows, cols, P, R):
 
     return image
 
+def getPointImage(points, rows, cols, P, R):
+    assert R.shape[0] == 4
+    assert R.shape[1] == 4
+    assert P.shape[0] == 3
+    assert P.shape[1] == 4
+    assert points.shape[0] >= 3
+
+    image = np.zeros((rows,cols),dtype=np.uint8)
+
+    points2D = get2DPointsInCamFrameKITTI(points[:3,:], rows, cols, P, R)
+
+    for noOfPoints in range(points.shape[1]):
+        image[int(points2D[1,noOfPoints]),int(points2D[0,noOfPoints])] = 255
+
+    return image
+
+
 def getDepthImages(points, rows, cols, P, R):
     assert R.shape[0] == 4
     assert R.shape[1] == 4
@@ -236,6 +253,10 @@ def processScenes(srcPath, dstPath):
     if not os.path.exists(dstImgDepthPath):
         os.makedirs(dstImgDepthPath)
 
+    dstImgPointsPath = os.path.join(dstPath,'velodyne_points_point_image/data')
+    if not os.path.exists(dstImgPointsPath):
+        os.makedirs(dstImgPointsPath)
+
     dstVeloPath = os.path.join(dstPath,'velodyne_points/data')
     if not os.path.exists(dstVeloPath):
         os.makedirs(dstVeloPath)
@@ -279,7 +300,7 @@ def processScenes(srcPath, dstPath):
         gtCamFrameVeloPoints = get3DPointsInCamFrameKITTI(correctedPoints,image.shape[0],image.shape[1],P,R)
         downSampledGtCamFrameVeloPoints = downSamplePtCld(gtCamFrameVeloPoints,_maxNoOfPts)
         with open(dstCamFrameVeloPointsFilename,'wb') as gtPCDFile:
-            gtCamFrameVeloPoints.tofile(gtPCDFile)
+            downSampledGtCamFrameVeloPoints.tofile(gtPCDFile)
 
         if _debug:
             renderLiDARImageOverLap(downSampledGtCamFrameVeloPoints[:3,:], image, np.eye(4), P, R, f'testOverLapImageDownSampled_{point}.png')
@@ -291,6 +312,7 @@ def processScenes(srcPath, dstPath):
             fileName = '_'.join([listOfLidarPoints[point].split('.')[0],str(iteration)])
             depthImageFilename = os.path.join(dstImgDepthPath,'.'.join([fileName,'png']))
             intensityImageFilename = os.path.join(dstImgIntPath,'.'.join([fileName,'png']))
+            pointImageImageFilename = os.path.join(dstImgPointsPath,'.'.join([fileName,'png']))
         
             if iteration == 2:
                 randomTransformation = np.eye(4)
@@ -304,11 +326,7 @@ def processScenes(srcPath, dstPath):
                 renderLiDARImageOverLap(miscalibratedPointcloud[:3,:], image, np.eye(4), P, R, f'testOverLapImagemiscalibrated_{point}_{iteration}.png')
 
             # Randomized points that overlap the camera image
-            pointCloudName = '.'.join(['_'.join([listOfLidarPoints[point].split('.')[0],str(iteration)]),'bin'])
-            dstCamFrameMisAlignedVeloPointsFilename = os.path.join(dstCamPointsmisalignedVeloPath, pointCloudName)
             randomizedCamFrameVeloPoints = get3DPointsInCamFrameKITTI(miscalibratedPointcloud, image.shape[0], image.shape[1], P, R)
-            with open(dstCamFrameMisAlignedVeloPointsFilename, 'wb') as gtPCDFile:
-                randomizedCamFrameVeloPoints.tofile(gtPCDFile)
 
             # depth image of the randomized points 
             depthImage = PIL.Image.fromarray(getDepthImages(randomizedCamFrameVeloPoints, image.shape[0], image.shape[1], P, R ))
@@ -318,12 +336,17 @@ def processScenes(srcPath, dstPath):
             intensityImage = PIL.Image.fromarray(getIntensityImages(randomizedCamFrameVeloPoints, image.shape[0], image.shape[1], P, R ))
             intensityImage.save(intensityImageFilename)
 
+            # point image
+            pointImage = PIL.Image.fromarray(getPointImage(randomizedCamFrameVeloPoints, image.shape[0], image.shape[1], P, R ))
+            pointImage.save(intensityImageFilename)
+
+
             sampleDetails['image filename'] = imageFilename
             sampleDetails['point cloud filename'] = dstVeloPointsFilename
             sampleDetails['points in camera frame'] = dstCamFrameVeloPointsFilename
-            sampleDetails['mis-aligned points'] = dstCamFrameMisAlignedVeloPointsFilename
             sampleDetails['transfromation'] = randomTransformation.tolist()
             sampleDetails['depth image filename'] = depthImageFilename
+            sampleDetails['point image filename'] = pointImageImageFilename
             sampleDetails['intensity image filename'] = intensityImageFilename
             sampleDetails['camera intrinsics'] = K.tolist()
             sampleDetails['projection matrix'] = P.tolist()
