@@ -37,7 +37,7 @@ sys.path.append(os.path.join(ROOT_DIR, 'model'))
 modelPath = '/home/akshay/targetless_calibration/src/model/trained/bestTargetCalibrationModel.pth'
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1, 2'
 
 _Debug = False
 
@@ -50,12 +50,14 @@ def test(model, dataLoader):
     eulerAngleErrors = np.empty((3,len(dataLoader)),dtype=float)
     translationError = np.empty((3,len(dataLoader)),dtype=float)
     s3DistanceError = np.empty((1,len(dataLoader)),dtype=float)
+    gteulerAngle = np.empty((3,len(dataLoader)),dtype=float)
+    gttranslation = np.empty((3,len(dataLoader)),dtype=float)
   
 
     for j, data in tqdm(enumerate(dataLoader,0), total=len(dataLoader)):
 
        # Expand the data into its respective components
-        srcClrT, srcDepthT, __, ptCldT, ptCldSize, targetTransformT, options = data
+        srcClrT, srcDepthT, targetTransformT, ptCldT , options = data = data
 
         # Transpose the tensors such that the no of channels are the 2nd term
         srcClrT = srcClrT.to('cuda')
@@ -89,8 +91,11 @@ def test(model, dataLoader):
         eulerAngleErrors[:,j] = torch.rad2deg(torch.mean(errorEulerAngle,dim=0)).to('cpu').numpy()
         errorTranslation = torch.abs(gtT - predT)
         translationError[:,j] = torch.mean(errorTranslation,dim=0).to('cpu').numpy()
+
+        gteulerAngle[:,j] = torch.rad2deg(torch.mean(targetEulerAngles,dim=0)).to('cpu').numpy()
+        gttranslation[:,j] = torch.mean(gtT,dim=0).to('cpu').numpy()
         
-    return(s3DistanceError, eulerAngleErrors, translationError)
+    return(s3DistanceError, eulerAngleErrors, translationError, gteulerAngle, gttranslation)
 
 
 def main():
@@ -115,9 +120,9 @@ def main():
     model = onlineCalibration()
     if torch.cuda.is_available():
         device = 'cuda'
-#        if torch.cuda.device_count() > 1:
-#            print('Multiple GPUs found. Moving to Dataparallel approach')
-#            model = torch.nn.DataParallel(model)
+        if torch.cuda.device_count() > 1:
+            print('Multiple GPUs found. Moving to Dataparallel approach')
+            model = torch.nn.DataParallel(model)
     else: 
         device = 'cpu'
 
@@ -130,8 +135,8 @@ def main():
     TRAIN_DATASET = dataLoader(config.trainingDataFile, mode='train')
     TEST_DATASET = dataLoader(config.trainingDataFile, mode='test')
 
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=0,drop_last=True)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=0,drop_last=True)
+    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=10,drop_last=True)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=10,drop_last=True)
     #MODEL = importlib.import_module(pointcloudnet)
 
     
@@ -167,6 +172,9 @@ def main():
     distanceErr = np.empty((1,0))
     angularErr = np.empty((3,0))
     translationErr = np.empty((3,0))
+    angularGT = np.empty((3,0))
+    translationGT = np.empty((3,0))
+
 
     # Check if there are existing models, If so, Load themconfig
     # Check if the file exists
@@ -212,7 +220,7 @@ def main():
             optimizermodel.zero_grad()
             
             # Expand the data into its respective components
-            srcClrT, srcDepthT, __, ptCldT, ptCldSize, targetTransformT, options = data
+            srcClrT, srcDepthT, targetTransformT, ptCldT , options = data
             #print(f'time taken to read the data is {timeInstance.toc()}')
 
             # Color Image - Cuda 0
@@ -225,7 +233,7 @@ def main():
 
             # Move the loss Function to Cuda 0    
             #timeInstance.tic()      
-            loss, manhattanDist = loss_function(predTransform, srcClrT, srcDepthT, ptCldT, ptCldSize, targetTransformT, config.calibrationDir, 1, None )
+            loss, manhattanDist = loss_function(predTransform, srcClrT, srcDepthT, ptCldT, targetTransformT, config.calibrationDir, 1, None )
             #print(f'time taken to calculate loss is {timeInstance.toc()}')
 
             loss.backward()
@@ -245,7 +253,7 @@ def main():
 
 
         with torch.no_grad():
-            simpleDistanceSE3, errorInAngles, errorInTranslation = test(model, testDataLoader)
+            simpleDistanceSE3, errorInAngles, errorInTranslation, gtAngles, gtTranslation = test(model, testDataLoader)
 
             print("Calculated mean Errors:" +  str(np.mean(simpleDistanceSE3)))
             print("Mean Angular Error: "+str(np.mean(errorInAngles,axis=1)))
@@ -259,6 +267,8 @@ def main():
             distanceErr = np.append(distanceErr, simpleDistanceSE3)
             angularErr = np.append(angularErr, errorInAngles,axis=1)
             translationErr = np.append(translationErr, errorInTranslation,axis=1)
+            angularGT = np.append(angularGT, gtAngles,axis=1)
+            translationGT = np.append(translationGT, gtTranslation)
 
             # Increment the model not bettering count
             modelNotChangingCount += 1
@@ -281,6 +291,8 @@ def main():
     np.save(os.path.join(logsDirsTesting,'DistanceErr.npy'), distanceErr)
     np.save(os.path.join(logsDirsTesting,'ErrorInAngles.npy'), angularErr)
     np.save(os.path.join(logsDirsTesting,'ErrorInTranslation.npy'), translationErr)
+    np.save(os.path.join(logsDirsTesting,'GroundTruthAngles.npy'), angularGT)
+    np.save(os.path.join(logsDirsTesting,'GroundTruthTranslation.npy'), translationGT)
 
     logFileTraining.close()
     logFileTesting.close()
