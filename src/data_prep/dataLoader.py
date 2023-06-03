@@ -141,23 +141,23 @@ class dataLoader(Dataset):
 
         srcIntensityImageFileName = sample['intensity image filename']
 
+        srcPointImageFileName = sample['point image filename']
+
         srcColorImageFileName = sample['image filename']
 
         gtPointCldFileName = sample['points in camera frame']
 
-        misalignedPtCldFileName = sample['mis-aligned points']
-
         transform = np.asarray(sample['transfromation'])
 
         __, __, srcDepthImg = readimgfromfilePIL(srcDepthImageFileName)
-        #srcDepthImg = normalizePILGrayImg(srcDepthImg) # Bring it to the range of [0,1]
-        srcDepthImg = imgTensorPreProc(srcDepthImg)
-
 
         __, __, srcIntensityImg = readimgfromfilePIL(srcIntensityImageFileName)
-        #srcIntensityImg = normalizePILGrayImg(srcIntensityImg) # Bring it to the range of [0,1]
-        srcIntensityImg = imgTensorPreProc(srcIntensityImg)
 
+        __, __, srcPointImg = readimgfromfilePIL(srcPointImageFileName)
+        srcDepthImg[2,:,:] = srcIntensityImg[0,:,:]
+        srcDepthImg[0,:,:] = srcPointImg[0,:,:]
+
+        srcDepthImg = imgTensorPreProc(srcDepthImg)
 
         __, __, srcClrImg = readimgfromfilePIL(srcColorImageFileName)
         colorImage = np.array(srcClrImg)
@@ -167,19 +167,9 @@ class dataLoader(Dataset):
         # read the point cloud 
         gtPtCld, gtIntensityValues = readvelodynepointcloud(gtPointCldFileName)
 
-        misalignedPtCld, misalignedIntensityValues = readvelodynepointcloud(gtPointCldFileName)
-
-
-        intensityValues = intensityValues.reshape(intensityValues.shape[0],1)
+        gtIntensityValues = gtIntensityValues.reshape(gtIntensityValues.shape[0],1)
         
-
-        #normals = getNormals(ptCld[:,:3])
-
-        # Combine Depth information with intensity information on another channel
-        srcDepthImg[2,:,:] = srcIntensityImg[0,:,:]
-
-
-        return (srcClrImg, srcDepthImg, transform, gtPtCld, misalignedPtCld, [colorImage])
+        return (srcClrImg, srcDepthImg, transform, gtPtCld, [colorImage])
 
 
 if __name__ == "__main__":
