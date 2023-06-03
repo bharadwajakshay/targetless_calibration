@@ -43,7 +43,7 @@ def readvelodynepointcloud(path_to_file):
     So to read the file, we use the inbuilt fuction form the np array to rad from the file
     '''
 
-    pointcloud = np.fromfile(path_to_file, dtype=np.float32).reshape(4,-1)
+    pointcloud = np.fromfile(path_to_file).reshape(4,-1)
     intensity_data = pointcloud[3,:]
     
     # Return points ignoring the reflectivity 
@@ -94,10 +94,7 @@ class dataLoader(Dataset):
         trainIdx = int(len(self.dataList)*0.8)
         testIdx = int(len(self.dataList)*0.9)
 
-
-
         if mode =='train':
-
             self.data = self.dataList[:trainIdx]
            
         if mode =='test':
@@ -150,26 +147,27 @@ class dataLoader(Dataset):
         transform = np.asarray(sample['transfromation'])
 
         __, __, srcDepthImg = readimgfromfilePIL(srcDepthImageFileName)
+        srcDepthImg = imgTensorPreProc(srcDepthImg)
 
         __, __, srcIntensityImg = readimgfromfilePIL(srcIntensityImageFileName)
+        srcIntensityImg = imgTensorPreProc(srcIntensityImg)
 
         __, __, srcPointImg = readimgfromfilePIL(srcPointImageFileName)
-        srcDepthImg[2,:,:] = srcIntensityImg[0,:,:]
-        srcDepthImg[0,:,:] = srcPointImg[0,:,:]
-
-        srcDepthImg = imgTensorPreProc(srcDepthImg)
+        srcPointImg = imgTensorPreProc(srcPointImg)
+        
 
         __, __, srcClrImg = readimgfromfilePIL(srcColorImageFileName)
         colorImage = np.array(srcClrImg)
-        #srcClrImg = normalizePILImg(srcClrImg) # Bring it to the range of [0,1]
         srcClrImg = imgTensorPreProc(srcClrImg)
 
         # read the point cloud 
         gtPtCld, gtIntensityValues = readvelodynepointcloud(gtPointCldFileName)
 
         gtIntensityValues = gtIntensityValues.reshape(gtIntensityValues.shape[0],1)
+        srcDepthImg[2,:,:] = srcIntensityImg[0,:,:]
+        srcDepthImg[0,:,:] = srcPointImg[0,:,:]
         
-        return (srcClrImg, srcDepthImg, transform, gtPtCld, [colorImage])
+        return (srcClrImg, srcDepthImg, transform, gtPtCld.T, [colorImage])
 
 
 if __name__ == "__main__":
