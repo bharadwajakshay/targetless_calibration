@@ -338,7 +338,7 @@ def processScenes(srcPath, dstPath):
 
             # point image
             pointImage = PIL.Image.fromarray(getPointImage(randomizedCamFrameVeloPoints, image.shape[0], image.shape[1], P, R ))
-            pointImage.save(intensityImageFilename)
+            pointImage.save(pointImageImageFilename)
 
 
             sampleDetails['image filename'] = imageFilename
