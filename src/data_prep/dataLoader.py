@@ -91,8 +91,11 @@ class dataLoader(Dataset):
             for scenes in  list(self.data[keys].keys()):
                 self.dataList.append(self.data[keys][scenes])
 
-        trainIdx = int(len(self.dataList)*0.8)
+        trainIdx = int(len(self.dataList)*0.75)
         testIdx = int(len(self.dataList)*0.9)
+
+        #trainIdx = 1000
+        #testIdx = 2000
 
         if mode =='train':
             self.data = self.dataList[:trainIdx]
