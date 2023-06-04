@@ -19,7 +19,7 @@ from model.lossFunction import get_loss
 import concurrent.futures
 from common.utilities import *
 from common.pytorch3D import *
-from common.tensorTools import saveModelParams
+from common.tensorTools import saveModelParams, saveCheckPoint
 
 from torchvision import transforms
 from model.transformsTensor import *
@@ -108,6 +108,12 @@ def main():
     if not os.path.exists('/'.join(modelPath.split('/')[:-1])):
         os.makedirs('/'.join(modelPath.split('/')[:-1]))
 
+    # Path to checkpoint
+    currentTimeStamp = datetime.now()
+    checkpointDir = os.path.join(config.pathToCheckpoint, str(currentTimeStamp))
+    if not os.path.exists(checkpointDir):
+        os.makedirs(checkpointDir)
+
 
     # Time instance
     timeInstance = TicToc()
@@ -160,7 +166,8 @@ def main():
     )
 
 
-    schedulerModel = torch.optim.lr_scheduler.MultiStepLR(optimizermodel, milestones=[24,30], gamma=0.1)
+    #schedulerModel = torch.optim.lr_scheduler.MultiStepLR(optimizermodel, milestones=[24,30], gamma=0.1)
+    schedulerModel = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizermodel, mode='min', patience=4)
     
 
     start_epoch = 0
@@ -178,25 +185,28 @@ def main():
 
     # Check if there are existing models, If so, Load themconfig
     # Check if the file exists
-    if os.path.isfile(modelPath):
+    if config.loadCheckPoint:
         try:
-            model_weights = torch.load(modelPath)
+            model_weights = torch.load(config.checkpointFilename)
             model.load_state_dict(model_weights['modelStateDict'])
             global_epoch = model_weights['epoch']
         except:
             print("Failed to load the model. Continuting without loading weights")
 
     # Check if the logs folder exitst, if not make the dir
-    if not os.path.isdir(config.logsDirs):
+
+    if not os.path.isdir(os.path.join(config.logsDirs)):
         os.makedirs(config.logsDirs)
         Path(os.path.join(config.logsDirs,'DistanceErr.npy')).touch()
         Path(os.path.join(config.logsDirs,'ErrorInAngles.npy')).touch()
         Path(os.path.join(config.logsDirs,'ErrorInTranslation.npy')).touch()
+        Path(os.path.join(config.logsDirs,'GroundTruthAngles.npy')).touch()
+        Path(os.path.join(config.logsDirs,'GroundTruthTranslation.npy')).touch()
+        
 
     manhattanDistArray = np.empty(0)
 
     # Get timestamp 
-    currentTimeStamp = datetime.now()
     currentTimeStamp = datetime.timestamp(currentTimeStamp)
     
     # Open Training file 
@@ -273,15 +283,20 @@ def main():
             # Increment the model not bettering count
             modelNotChangingCount += 1
 
-            global_epoch += 1
-
+            
             if (np.mean(simpleDistanceSE3) <  simpleDistanceSE3Err):
 
                 simpleDistanceSE3Err = np.mean(simpleDistanceSE3)
-                saveModelParams(model, optimizermodel, global_epoch, modelPath)
+                saveModelParams(model, modelPath)
                 modelNotChangingCount = 0
+
         
-        schedulerModel.step()
+        #schedulerModel.step()
+        schedulerModel.step(simpleDistanceSE3Err)
+        checkPOintPath = os.path.join(checkpointDir,f'checkpoint_epoch_{global_epoch}')
+        saveCheckPoint(model,optimizermodel,global_epoch, loss,schedulerModel,checkPOintPath)
+        global_epoch += 1
+
         
 
 
@@ -296,12 +311,7 @@ def main():
 
     logFileTraining.close()
     logFileTesting.close()
-
-    
-    print("something")
-
-
-        
+       
             
 
 if __name__ == "__main__":
