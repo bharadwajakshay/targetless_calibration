@@ -8,11 +8,18 @@ trainingDataFile = "/mnt/data/akshay/kitti/processed/2011_09_26/datasetdetails.j
 camToCamCalibFile = "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/2011_09_26/calib_cam_to_cam.txt"
 camToVeloCalibFile = "/mnt/291d3084-ca91-4f28-8f33-ed0b64be0a8c/akshay/kitti/raw/2011_09_26/calib_velo_to_cam.txt"
 
-pathToPretrainedModel = "/home/akshay/pytorchEnv/targetless_calibration/src/model/trained/bestTargetCalibrationModel.pth"
+pathToPretrainedModel = "/home/akshay/pyTorchEnv/targetless_calibration/src/model/trained/bestTargetCalibrationModel.pth"
 
-logsDirs = "/home/akshay/pytorchEnv/targetless_calibration/logs/"
+pathToCheckpoint = "/home/akshay/pyTorchEnv/targetless_calibration/checkpoints"
+
+logsDirs = "/home/akshay/pyTorchEnv/targetless_calibration/logs/"
 
 calibrationDir = "/mnt/data/akshay/kitti/raw/2011_09_26/"
+
+loadCheckPoint = False
+checkpointFilename = None
+
+
 
 training = dict(
     batchSize = 30,
