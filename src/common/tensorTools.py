@@ -378,19 +378,27 @@ def applyTransformationOnTensor(ptCloud, transform):
     for axis in range(3):
         points[:,axis,:] = points[:,axis,:] + transform[:,axis,3]
 
-    return points
+    return points   
 
-
-
-    
-
-def saveModelParams(model, optimizermodel, epoch, path):
+def saveModelParams(model, path):
 
     print("saving the model")
-    state = {'epoch': epoch,
-            'modelStateDict':model.state_dict(),
-            'optimizerRegressorStateDict':optimizermodel.state_dict()}
+    state = {
+            'modelStateDict':model.state_dict()
+            }
     torch.save(state, path)
+
+def saveCheckPoint(model, optimizermodel, epoch, loss, scheduler, path):
+    print('saving checkpoint')
+    checkpoint = {
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizermodel.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),
+        'loss': loss
+    }
+    torch.save(checkpoint,path)
+
 
 def sanityCheckDepthMaps(grayImg, depthImg):
 
