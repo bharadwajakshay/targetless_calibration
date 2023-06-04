@@ -292,17 +292,17 @@ def calculateEucledianDistTensor(tensor1, tensor2):
 
     return(euclideanDistance)
 
-def calculateEucledianDistOfPointClouds(PtCld0, PtCld1, ptCldSize):
+def calculateEucledianDistOfPointClouds(PtCld0, PtCld1):
 
     # Claculate the mean euclidean distance between each point point cloud
     meanEucledianDist = torch.empty(PtCld0.shape[0],1)
-    for channel in range(0,PtCld0.shape[0]):
+    for batch in range(0,PtCld0.shape[0]):
 
-        D = torch.sqrt(torch.pow(PtCld1[channel,:ptCldSize[channel],0] - PtCld0[channel,:ptCldSize[channel],0],2) 
-            + torch.pow(PtCld1[channel,:ptCldSize[channel],1] - PtCld0[channel,:ptCldSize[channel],1],2) 
-            + torch.pow(PtCld1[channel,:ptCldSize[channel],2] - PtCld0[channel,:ptCldSize[channel],2],2))
+        D = torch.sqrt(torch.pow(PtCld1[batch,:,0] - PtCld0[batch,:,0],2) 
+            + torch.pow(PtCld1[batch,:,1] - PtCld0[batch,:,1],2) 
+            + torch.pow(PtCld1[batch,:,2] - PtCld0[batch,:,2],2))
 
-        meanEucledianDist[channel,:] = torch.max(D)
+        meanEucledianDist[batch,:] = torch.mean(D)
    
 
     return(meanEucledianDist)
