@@ -19,7 +19,7 @@ from model.lossFunction import get_loss
 import concurrent.futures
 from common.utilities import *
 from common.pytorch3D import *
-from common.tensorTools import saveModelParams
+from common.tensorTools import saveModelParams, saveCheckPoint
 
 from torchvision import transforms
 from model.transformsTensor import *
@@ -37,7 +37,7 @@ sys.path.append(os.path.join(ROOT_DIR, 'model'))
 modelPath = '/home/akshay/targetless_calibration/src/model/trained/bestTargetCalibrationModel.pth'
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1, 2'
 
 _Debug = False
 
@@ -50,12 +50,14 @@ def test(model, dataLoader):
     eulerAngleErrors = np.empty((3,len(dataLoader)),dtype=float)
     translationError = np.empty((3,len(dataLoader)),dtype=float)
     s3DistanceError = np.empty((1,len(dataLoader)),dtype=float)
+    gteulerAngle = np.empty((3,len(dataLoader)),dtype=float)
+    gttranslation = np.empty((3,len(dataLoader)),dtype=float)
   
 
     for j, data in tqdm(enumerate(dataLoader,0), total=len(dataLoader)):
 
        # Expand the data into its respective components
-        srcClrT, srcDepthT, __, ptCldT, ptCldSize, targetTransformT, options = data
+        srcClrT, srcDepthT, targetTransformT, ptCldT , options = data = data
 
         # Transpose the tensors such that the no of channels are the 2nd term
         srcClrT = srcClrT.to('cuda')
@@ -89,8 +91,11 @@ def test(model, dataLoader):
         eulerAngleErrors[:,j] = torch.rad2deg(torch.mean(errorEulerAngle,dim=0)).to('cpu').numpy()
         errorTranslation = torch.abs(gtT - predT)
         translationError[:,j] = torch.mean(errorTranslation,dim=0).to('cpu').numpy()
+
+        gteulerAngle[:,j] = torch.rad2deg(torch.mean(targetEulerAngles,dim=0)).to('cpu').numpy()
+        gttranslation[:,j] = torch.mean(gtT,dim=0).to('cpu').numpy()
         
-    return(s3DistanceError, eulerAngleErrors, translationError)
+    return(s3DistanceError, eulerAngleErrors, translationError, gteulerAngle, gttranslation)
 
 
 def main():
@@ -102,6 +107,12 @@ def main():
     modelPath = config.pathToPretrainedModel
     if not os.path.exists('/'.join(modelPath.split('/')[:-1])):
         os.makedirs('/'.join(modelPath.split('/')[:-1]))
+
+    # Path to checkpoint
+    currentTimeStamp = datetime.now()
+    checkpointDir = os.path.join(config.pathToCheckpoint, str(currentTimeStamp))
+    if not os.path.exists(checkpointDir):
+        os.makedirs(checkpointDir)
 
 
     # Time instance
@@ -115,9 +126,9 @@ def main():
     model = onlineCalibration(config.backbone, depth=config.networkDepth)
     if torch.cuda.is_available():
         device = 'cuda'
-#        if torch.cuda.device_count() > 1:
-#            print('Multiple GPUs found. Moving to Dataparallel approach')
-#            model = torch.nn.DataParallel(model)
+        if torch.cuda.device_count() > 1:
+            print('Multiple GPUs found. Moving to Dataparallel approach')
+            model = torch.nn.DataParallel(model)
     else: 
         device = 'cpu'
 
@@ -125,18 +136,13 @@ def main():
 
     # get th eloss fucntion
     loss_function = get_loss().to(device)
-
-    # Get the max point cloud size
-    file = open(config.maxPtCldSizeFile,'r')
-    maxPtCldSize = int(file.read())
-    file.close()
-
+    
     # Hyper Parameters 
-    TRAIN_DATASET = dataLoader(config.trainingDataFile, maxPtCldSize,mode='train')
-    TEST_DATASET = dataLoader(config.trainingDataFile, maxPtCldSize,mode='test')
+    TRAIN_DATASET = dataLoader(config.trainingDataFile, mode='train')
+    TEST_DATASET = dataLoader(config.trainingDataFile, mode='test')
 
-    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=8,drop_last=True)
-    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=12,drop_last=True)
+    trainDataLoader = torch.utils.data.DataLoader(TRAIN_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=10,drop_last=True)
+    testDataLoader = torch.utils.data.DataLoader(TEST_DATASET, batch_size=config.training['batchSize'], shuffle=True, num_workers=10,drop_last=True)
     #MODEL = importlib.import_module(pointcloudnet)
 
     
@@ -160,7 +166,8 @@ def main():
     )
 
 
-    schedulerModel = torch.optim.lr_scheduler.MultiStepLR(optimizermodel, milestones=[24,30], gamma=0.1)
+    #schedulerModel = torch.optim.lr_scheduler.MultiStepLR(optimizermodel, milestones=[24,30], gamma=0.1)
+    schedulerModel = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizermodel, mode='min', patience=4)
     
 
     start_epoch = 0
@@ -172,28 +179,34 @@ def main():
     distanceErr = np.empty((1,0))
     angularErr = np.empty((3,0))
     translationErr = np.empty((3,0))
+    angularGT = np.empty((3,0))
+    translationGT = np.empty((3,0))
+
 
     # Check if there are existing models, If so, Load themconfig
     # Check if the file exists
-    if os.path.isfile(modelPath):
+    if config.loadCheckPoint:
         try:
-            model_weights = torch.load(modelPath)
+            model_weights = torch.load(config.checkpointFilename)
             model.load_state_dict(model_weights['modelStateDict'])
             global_epoch = model_weights['epoch']
         except:
             print("Failed to load the model. Continuting without loading weights")
 
     # Check if the logs folder exitst, if not make the dir
-    if not os.path.isdir(config.logsDirs):
+
+    if not os.path.isdir(os.path.join(config.logsDirs)):
         os.makedirs(config.logsDirs)
         Path(os.path.join(config.logsDirs,'DistanceErr.npy')).touch()
         Path(os.path.join(config.logsDirs,'ErrorInAngles.npy')).touch()
         Path(os.path.join(config.logsDirs,'ErrorInTranslation.npy')).touch()
+        Path(os.path.join(config.logsDirs,'GroundTruthAngles.npy')).touch()
+        Path(os.path.join(config.logsDirs,'GroundTruthTranslation.npy')).touch()
+        
 
     manhattanDistArray = np.empty(0)
 
     # Get timestamp 
-    currentTimeStamp = datetime.now()
     currentTimeStamp = datetime.timestamp(currentTimeStamp)
     
     # Open Training file 
@@ -216,7 +229,7 @@ def main():
             
             optimizermodel.zero_grad()
             # Expand the data into its respective components
-            srcClrT, srcDepthT, __, ptCldT, ptCldSize, targetTransformT, options = data
+            srcClrT, srcDepthT, targetTransformT, ptCldT , options = data
             #print(f'time taken to read the data is {timeInstance.toc()}')
 
             # Color Image - Cuda 0
@@ -229,7 +242,7 @@ def main():
 
             # Move the loss Function to Cuda 0    
             #timeInstance.tic()      
-            loss, manhattanDist = loss_function(predTransform, srcClrT, srcDepthT, ptCldT, ptCldSize, targetTransformT, config.calibrationDir, 1, None )
+            loss, manhattanDist = loss_function(predTransform, srcClrT, srcDepthT, ptCldT, targetTransformT, config.calibrationDir, 1, None )
             #print(f'time taken to calculate loss is {timeInstance.toc()}')
 
             loss.backward()
@@ -248,8 +261,7 @@ def main():
 
 
         with torch.no_grad():
-            model = model.eval()
-            simpleDistanceSE3, errorInAngles, errorInTranslation = test(model, testDataLoader)
+            simpleDistanceSE3, errorInAngles, errorInTranslation, gtAngles, gtTranslation = test(model, testDataLoader)
 
             print("Calculated mean Errors:" +  str(np.mean(simpleDistanceSE3)))
             print("Mean Angular Error: "+str(np.mean(errorInAngles,axis=1)))
@@ -263,18 +275,26 @@ def main():
             distanceErr = np.append(distanceErr, simpleDistanceSE3)
             angularErr = np.append(angularErr, errorInAngles,axis=1)
             translationErr = np.append(translationErr, errorInTranslation,axis=1)
+            angularGT = np.append(angularGT, gtAngles,axis=1)
+            translationGT = np.append(translationGT, gtTranslation)
 
             # Increment the model not bettering count
             modelNotChangingCount += 1
 
-            global_epoch += 1
+            
             if (np.mean(simpleDistanceSE3) <  simpleDistanceSE3Err):
 
                 simpleDistanceSE3Err = np.mean(simpleDistanceSE3)
-                saveModelParams(model, optimizermodel, global_epoch, modelPath)
+                saveModelParams(model, modelPath)
                 modelNotChangingCount = 0
+
         
-        schedulerModel.step()
+        #schedulerModel.step()
+        schedulerModel.step(simpleDistanceSE3Err)
+        checkPOintPath = os.path.join(checkpointDir,f'checkpoint_epoch_{global_epoch}')
+        saveCheckPoint(model,optimizermodel,global_epoch, loss,schedulerModel,checkPOintPath)
+        global_epoch += 1
+
         
 
 
@@ -284,15 +304,12 @@ def main():
     np.save(os.path.join(logsDirsTesting,'DistanceErr.npy'), distanceErr)
     np.save(os.path.join(logsDirsTesting,'ErrorInAngles.npy'), angularErr)
     np.save(os.path.join(logsDirsTesting,'ErrorInTranslation.npy'), translationErr)
+    np.save(os.path.join(logsDirsTesting,'GroundTruthAngles.npy'), angularGT)
+    np.save(os.path.join(logsDirsTesting,'GroundTruthTranslation.npy'), translationGT)
 
     logFileTraining.close()
     logFileTesting.close()
-
-    
-    print("something")
-
-
-        
+       
             
 
 if __name__ == "__main__":
