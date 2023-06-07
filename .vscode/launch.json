@@ -1,55 +1,11 @@
 {
     "configurations": [
         {
-            "name": "Python: Test Data Loader",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/data_prep/dataLoader.py",
-            "console": "integratedTerminal"
-        },
-        {
             "name": "Python: Train the neural net",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/src/train.py",
             "console": "integratedTerminal"
-        },
-        {
-            "name": "Python: Prepare Training and Testing dataset ",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/data_prep/decalibration.py",
-            "console": "integratedTerminal",
-            "args": [
-                "/mnt/data/akshay/kitti/"
-            ]
-        },
-        {
-            "name": "Python: TFRecord test",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/tfrecorder_test.py",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Python: dataset-build-color-2",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/data_prep/datasetBuilderColor2.py",
-            "console": "integratedTerminal",
-            "args": [
-                "/home/akshay/5TB-HDD/Datasets/kitti/raw_test/2011_09_26/2011_09_26_drive_0001"
-            ]
-        },
-        {
-            "name": "Python: dataset-build-color",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/data_prep/datasetBuilderColor.py",
-            "console": "integratedTerminal",
-            "args": [
-                "/home/akshay/5TB-HDD/Datasets/kitti/raw_test/2011_09_26/2011_09_26_drive_0001"
-            ]
         },
         {
             "name": "Python: Generate training data",
@@ -59,24 +15,14 @@
             "console": "integratedTerminal",
             "args": [
                 "/mnt/data/akshay/kitti/raw/2011_09_26",
-                "/mnt/data/akshay/kitti/processed/2011_09_26"
-            ]
-        },
-        {
-            "name": "Python: Parse training data",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/src/data_prep/parseGeneratedData.py",
-            "console": "integratedTerminal",
-            "args": [
-                "/mnt/data/akshay/kitti/"
+                "/mnt/data/akshay/kitti/test-debugging/2011_09_26"
             ]
         },
         {
             "name": "Python: Evaluate neural net",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/src/evaluate.py",
+            "program": "${workspaceFolder}/src/inference.py",
             "console": "integratedTerminal"
         },
     ]
