@@ -57,7 +57,7 @@ def test(model, dataLoader):
     for j, data in tqdm(enumerate(dataLoader,0), total=len(dataLoader)):
 
        # Expand the data into its respective components
-        srcClrT, srcDepthT, targetTransformT, ptCldT , options = data = data
+        srcClrT, srcDepthT, targetTransformT, ptCldT , options = data
 
         # Transpose the tensors such that the no of channels are the 2nd term
         srcClrT = srcClrT.to('cuda')
@@ -188,8 +188,12 @@ def main():
     if config.loadCheckPoint:
         try:
             model_weights = torch.load(config.checkpointFilename)
-            model.load_state_dict(model_weights['modelStateDict'])
             global_epoch = model_weights['epoch']
+            optimizermodel.load_state_dict(model_weights['optimizer_state_dict'])
+            schedulerModel.load_state_dict(model_weights['scheduler_state_dict'])
+            model.load_state_dict(model_weights['model_state_dict'])
+
+            print(f'Continuing training from epoch {global_epoch}')
         except:
             print("Failed to load the model. Continuting without loading weights")
 
@@ -237,6 +241,11 @@ def main():
 
             # Depth Image - Cuda 0
             srcDepthT = srcDepthT.to(device)
+
+            if global_step % 2 == 0:
+                model.module.regressor_model.regressionRot.requires_grad = False
+                for param in model.module.regressor_model.regressionRot.parameters():
+                    param.requires_grad = False  
              
             predTransform  = model(srcClrT, srcDepthT)
 
@@ -249,7 +258,7 @@ def main():
             optimizermodel.step()
             manhattanDistArray = np.append(manhattanDistArray,manhattanDist.to('cpu').detach().numpy()) 
 
-        global_step += 1
+        global_epoch += 1
 
         
         logFileTraining.write('Global Epoch: '+str(global_epoch)+'\n')
@@ -294,8 +303,6 @@ def main():
         checkPOintPath = os.path.join(checkpointDir,f'checkpoint_epoch_{global_epoch}')
         saveCheckPoint(model,optimizermodel,global_epoch, loss,schedulerModel,checkPOintPath)
         global_epoch += 1
-
-        
 
 
         if global_epoch == config.training['epoch']:
