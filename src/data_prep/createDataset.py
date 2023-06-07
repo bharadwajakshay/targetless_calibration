@@ -18,13 +18,14 @@ from tqdm import tqdm
 calibfileName = "calib_velo_to_cam.txt"
 camIntrinsicsFilename = 'calib_cam_to_cam.txt'
 
-# 5 deg
+# 20 deg
 angleLimit = 0.174533
 
-# 0.1 m 
+# 0.2 m 
 translationLimit = 0.2 
 _debug = False
-_maxNoOfPts = 8048
+_maxNoOfPts2 = 8048
+_maxNoOfPts1 = 4024
 
 def downSamplePtCld(points, maxNoofPts):
     if points.shape[1] == maxNoofPts:
@@ -49,12 +50,14 @@ def downSamplePtCld(points, maxNoofPts):
 
 
 def getSynthesisedTransform(angleLimit, translationLimit):
-    omega_x = angleLimit*np.random.random_sample() - (angleLimit/2.0)
-    omega_y = angleLimit*np.random.random_sample() - (angleLimit/2.0)
-    omega_z = angleLimit*np.random.random_sample() - (angleLimit/2.0)
-    tr_x = translationLimit*np.random.random_sample() - (translationLimit/2.0)
-    tr_y = translationLimit*np.random.random_sample() - (translationLimit/2.0)
-    tr_z = translationLimit*np.random.random_sample() - (translationLimit/2.0)
+    #omega_x = angleLimit*np.random.random_sample() - (angleLimit/2.0)
+    #omega_y = angleLimit*np.random.random_sample() - (angleLimit/2.0)
+    #omega_z = angleLimit*np.random.random_sample() - (angleLimit/2.0)
+    #tr_x = translationLimit*np.random.random_sample() - (translationLimit/2.0)
+    #tr_y = translationLimit*np.random.random_sample() - (translationLimit/2.0)
+    #tr_z = translationLimit*np.random.random_sample() - (translationLimit/2.0).
+    [omega_x, omega_y, omega_z]  = np.random.uniform(low=-1*angleLimit, high=angleLimit, size=3)
+    [tr_x, tr_y, tr_z] = np.random.uniform(low=-1*translationLimit, high=translationLimit, size=3)
 
     theta = np.sqrt(omega_x**2 + omega_y**2 + omega_z**2)
     omega_cross = np.array([0.0, -omega_z, omega_y, omega_z, 0.0, -omega_x, -omega_y, omega_x, 0.0]).reshape(3,3)
@@ -298,7 +301,9 @@ def processScenes(srcPath, dstPath):
         # Ground truth of point that overlap the camera image
         dstCamFrameVeloPointsFilename = os.path.join(dstCamPointsVeloPath, listOfLidarPoints[point])
         gtCamFrameVeloPoints = get3DPointsInCamFrameKITTI(correctedPoints,image.shape[0],image.shape[1],P,R)
-        downSampledGtCamFrameVeloPoints = downSamplePtCld(gtCamFrameVeloPoints,_maxNoOfPts)
+
+
+        downSampledGtCamFrameVeloPoints = downSamplePtCld(gtCamFrameVeloPoints,_maxNoOfPts2)
         with open(dstCamFrameVeloPointsFilename,'wb') as gtPCDFile:
             downSampledGtCamFrameVeloPoints.tofile(gtPCDFile)
 
