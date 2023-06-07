@@ -384,7 +384,7 @@ def saveModelParams(model, path):
 
     print("saving the model")
     state = {
-            'modelStateDict':model.state_dict()
+            'model_state_dict':model.state_dict()
             }
     torch.save(state, path)
 
